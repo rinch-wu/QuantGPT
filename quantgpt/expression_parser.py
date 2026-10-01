@@ -113,6 +113,7 @@ Syntax extensions:
 
 import logging
 import re
+import threading
 from typing import Callable
 
 import numpy as np
@@ -121,11 +122,13 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 
-_WQ_OPERATORS = {
+# 官方算子目录提供的"本地尚未实现运行时"的算子（远程执行专用）。
+# 目录不可用时 wq_operator_catalog 会回落到自己的兜底核心集，这里再并一层
+# 本地实现已覆盖的算子，保证 mode="wq" 的解析在**任何目录状态下**都不会误杀。
+_WQ_LEGACY_CORE = {
     'rank', 'zscore', 'scale', 'group_rank', 'group_zscore',
     'abs', 'sign', 'log', 'sqrt',
-    'power', 'sign_power',
-    'max', 'min',
+    'power', 'max', 'min',
     'ts_mean', 'ts_std', 'ts_max', 'ts_min', 'ts_sum',
     'ts_shift', 'ts_delta', 'ts_rank', 'ts_argmax', 'ts_argmin',
     'decay_linear', 'product', 'ts_av_diff',
@@ -137,6 +140,10 @@ _WQ_OPERATORS = {
     # 服务端报 unknown operator，subagent 白等 1~7 分钟模拟。
     'trade_when',
     'indneutralize',
+    # 实测官方 GET /operators 确认存在、本地此前漏收，算子白名单过时导致
+    # 187 条真实跑通表达式被误杀 48 条（signed_power 33 次 / ts_zscore 12 次），
+    # 其中包括 Sharpe 2.29 的 ACTIVE 因子 9qWZ9G2x。
+    'signed_power', 'ts_zscore',
 }
 
 # WQ 模式下**不再有任何"未知算子透传"通道**（见 _build_function 里的硬报错分支）。
@@ -151,6 +158,24 @@ _LOCAL_ONLY_OPERATORS = {
     'ema', 'sma', 'wma', 'rsi', 'macd', 'obv', 'atr',
     'boll_upper', 'boll_lower', 'boll_mid', 'indneutralize',
 }
+
+# `_LOCAL_ONLY_OPERATORS` 里那些**官方目录确认存在**的算子。
+#
+# 历史教训：这张表曾被当作"WQ 不支持的算子"黑名单用，导致 `ts_zscore`
+# （官方合法算子）被误杀 12 次。名字里的 "local_only" 只表示"本地先实现，
+# 方便本地 pandas 回测"，**不**表示"不是 WQ 算子"——两者是不同的概念，
+# 混为一谈就会重演 25.7% 的误杀事故。
+# 只列**有实测证据**的：`GET /operators` 返回中存在，或真实跑通过的表达式里出现过。
+# `clip` 不在其中——官方 66 个算子里没有它（WQ 用 `max(lo, min(hi, x))`），
+# 所以它留在 _LOCAL_ONLY_UNSUPPORTED 里被硬拒，是正确行为。
+_LOCAL_ONLY_BUT_OFFICIAL = frozenset({
+    'ts_zscore',        # GET /operators 确认存在（曾被误杀 12 次）
+    'indneutralize',    # 官方 indneutralize / group_neutralize 的历史写法
+})
+
+# 真正只在本地存在的算子：任何目录状态下都必然不是 WQ 算子。
+# 只有这些才会被无条件硬拒（见 _build_function 与 wq_validator._validate_operators）。
+_LOCAL_ONLY_UNSUPPORTED = frozenset(_LOCAL_ONLY_OPERATORS) - _LOCAL_ONLY_BUT_OFFICIAL
 
 # WQ 价格/成交列。注意：**没有 market_cap** —— WQ 侧市值字段叫 cap，
 # 写 market_cap 会被服务端判 Invalid data field。本地 A 股引擎才叫 market_cap，
@@ -242,9 +267,9 @@ _WQ_REMOTE_ONLY_OPS = {
     'days_from_last_change': (1, 1, 'days_from_last_change(x)'),
     'last_diff_value': (1, 2, 'last_diff_value(x) or last_diff_value(x, default)'),
     'group_neutralize': (2, 2, 'group_neutralize(x, group)'),
-    'group_mean': (2, 2, 'group_mean(x, group)'),
+    'group_mean': (2, 3, 'group_mean(x, group) 或 group_mean(x, weight, group)'),
     'group_vector_neut': (2, 2, 'group_vector_neut(x, group)'),
-    'ts_regression': (4, 5, 'ts_regression(y, x, d, lag, rettype)'),
+    'ts_regression': (3, 5, 'ts_regression(y, x, d) 或 ts_regression(y, x, d, lag, rettype)'),
     'ts_decay_exp_window': (2, 3, 'ts_decay_exp_window(x, d, factor)'),
     'ts_ir': (2, 2, 'ts_ir(x, d)'),
     'ts_skewness': (2, 2, 'ts_skewness(x, d)'),
@@ -270,7 +295,160 @@ _WQ_REMOTE_ONLY_OPS = {
     'vec_choose': (2, None, 'vec_choose(n, x1, ...)'),
 }
 
-_WQ_OPERATORS = _WQ_OPERATORS | set(_WQ_REMOTE_ONLY_OPS.keys())
+_WQ_REMOTE_ONLY_OP_NAMES = set(_WQ_REMOTE_ONLY_OPS.keys())
+
+# ``_build_function`` 中以字面量分支实现、本地可直接求值的算子/函数。
+# 仅本地模式可用（mode="wq" 下多数由 _WQ_REMOTE_ONLY_OPS 拦截）。
+_LOCAL_ONLY_FUNCTIONS = {
+    'trade_when', 'group_rank', 'group_zscore',
+    'atr', 'boll_upper', 'boll_lower', 'boll_mid', 'clip', 'where',
+}
+
+
+def _refresh_wq_operator_cache() -> frozenset[str]:
+    """重新计算算子集合并写入缓存。返回缓存结果。"""
+    global _WQ_OPERATORS_CACHE
+    if _WQ_OPERATORS_CACHE is None:
+        _WQ_OPERATORS_CACHE = frozenset(_wq_operator_names())
+    return _WQ_OPERATORS_CACHE
+
+
+def _wq_operator_names() -> set[str]:
+    """mode="wq" 下当前允许的算子名集合（官方目录优先）。
+
+    历史教训：这里曾经是一份手写的 61 项白名单，上线后误杀 25.7% 的真实合规
+    表达式（`signed_power` / `ts_zscore` 等官方合法算子）。手抄本一旦落后于
+    平台就是**静默误杀源**，所以权威只能是官方 `GET /operators`：
+
+    1. 目录可用 → 目录 + 本地已实现的算子 + 远程执行算子；
+    2. 目录不可用 → 目录模块的兜底核心集（官方确认过的全集）+ 同上两层。
+
+    `where` 无论目录状态如何都**不会**出现在结果里（黑名单由目录模块保证）。
+    """
+    from . import wq_operator_catalog
+
+    return (
+        wq_operator_catalog.catalog_operators()
+        | _WQ_LEGACY_CORE
+        | _WQ_REMOTE_ONLY_OP_NAMES
+    ) - set(wq_operator_catalog.BLACKLISTED_OPERATORS)
+
+
+class _DynamicOperatorSet:
+    """随官方算子目录刷新的算子集合代理。
+
+    历史教训：``_WQ_OPERATORS`` 曾是一份手写白名单，上线后误杀 25.7% 的真实合规
+    表达式（``signed_power`` 33 次 / ``ts_zscore`` 12 次）。手抄本一旦落后于平台
+    就是**静默误杀源**，所以权威只能是官方 ``GET /operators``。
+
+    这里用代理而不是模块级常量，是因为算子目录是**运行时**才装载的（进程启动时
+    目录缓存可能还没落盘）。把集合做成常量并在 import 期求值，会把目录状态冻结
+    在 import 时刻，目录恢复后仍然继续误杀——那正是我们要消灭的行为。
+    """
+
+    def _current(self) -> frozenset[str]:
+        if _WQ_OPERATORS_CACHE is None:
+            with _WQ_OPERATOR_CACHE_LOCK:
+                if _WQ_OPERATORS_CACHE is None:
+                    return _refresh_wq_operator_cache()
+        return _WQ_OPERATORS_CACHE  # type: ignore[return-value]
+
+    # ---- 集合语义（全部走当前目录状态，而非冻结快照）----
+
+    def __contains__(self, item) -> bool:
+        return str(item).lower() in self._current()
+
+    def __iter__(self):
+        return iter(sorted(self._current()))
+
+    def __len__(self) -> int:
+        return len(self._current())
+
+    def __bool__(self) -> bool:
+        return bool(self._current())
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, (set, frozenset)):
+            return self._current() == frozenset(other)
+        return NotImplemented
+
+    def __ne__(self, other) -> bool:
+        result = self.__eq__(other)
+        return result if result is NotImplemented else not result
+
+    def __hash__(self) -> int:
+        return hash(self._current())
+
+    def __repr__(self) -> str:
+        return repr(sorted(self._current()))
+
+    def __or__(self, other):
+        return self._current() | frozenset(other)
+
+    def __ror__(self, other):
+        return frozenset(other) | self._current()
+
+    def __and__(self, other):
+        return self._current() & frozenset(other)
+
+    def __rand__(self, other):
+        return frozenset(other) & self._current()
+
+    def __sub__(self, other):
+        return self._current() - frozenset(other)
+
+    def __rsub__(self, other):
+        return frozenset(other) - self._current()
+
+    def __xor__(self, other):
+        return self._current() ^ frozenset(other)
+
+    def __rxor__(self, other):
+        return frozenset(other) ^ self._current()
+
+    def __le__(self, other) -> bool:
+        return self._current() <= frozenset(other)
+
+    def __lt__(self, other) -> bool:
+        return self._current() < frozenset(other)
+
+    def __ge__(self, other) -> bool:
+        return self._current() >= frozenset(other)
+
+    def __gt__(self, other) -> bool:
+        return self._current() > frozenset(other)
+
+    def copy(self) -> frozenset[str]:
+        return self._current()
+
+    def isdisjoint(self, other) -> bool:
+        return self._current().isdisjoint(other)
+
+
+_WQ_OPERATORS_CACHE: frozenset[str] | None = None
+_WQ_OPERATOR_CACHE_LOCK = threading.RLock()
+_WQ_OPERATORS = _DynamicOperatorSet()
+
+
+def reset_wq_operator_cache() -> None:
+    """目录刷新后清空算子集合缓存（refresh / cron / 测试用）。
+
+    不清的话进程会一直用"目录尚未装载"时算出的旧快照，等于把启动瞬间的
+    目录状态冻结下来——目录恢复后仍然误杀。
+    """
+    global _WQ_OPERATORS_CACHE
+    with _WQ_OPERATOR_CACHE_LOCK:
+        _WQ_OPERATORS_CACHE = None
+
+
+def wq_operators() -> set:
+    """WQ 模式下允许的全部算子名（含仅远程可执行的 operator-typed 算子）。
+
+    算子表以官方 ``GET /operators`` 为唯一权威（见 :mod:`quantgpt.wq_operator_catalog`）。
+    目录不可用时回落到兜底核心集，校验降级为 warning 而不是误杀。
+    """
+    return set(_WQ_OPERATORS)
+
 
 # 算子/变量别名 → WQ 官方替代方案。
 # 用途有二：(1) mode="wq" 报错时给出可直接抄的替代写法；(2) variable_category()
@@ -378,6 +556,9 @@ class ExpressionParser:
         'stddev': 'ts_std',
         'ts_decay_linear': 'decay_linear',
         'ts_product': 'product',
+        # ---- 官方命名（本地手抄白名单里写成了旧名）----
+        # 官方 `GET /operators` 里是 ts_std_dev / ts_delay / ts_covariance /
+        # ts_arg_max / ts_arg_min，以下几条把历史写法归一到**官方**名字。
         'ts_std_dev': 'ts_std',
         'ts_delay': 'ts_shift',
         'ts_covariance': 'ts_cov',
@@ -577,6 +758,55 @@ class ExpressionParser:
         """Parse a sub-expression, incrementing depth."""
         return self.parse(expr, self._depth + 1)
 
+    def _is_locally_implemented(self, func_name: str) -> bool:
+        """``_build_function`` 里是否有该算子的本地运行时实现。
+
+        必须与 ``_build_function`` 的分派链保持一致：任何漏掉的算子都会落到末尾
+        ``raise ValueError("Unknown function")``，把官方合法表达式判死。
+        新增本地实现时记得同步这里。
+        """
+        return (
+            func_name in self._UNARY_OPS
+            or func_name in self._TS_OPS
+            or func_name in self._TS_DUAL_OPS
+            or func_name in self._BINARY_OPS
+            or func_name in self._CROSS_SECTIONAL_OPS
+            or func_name in self._NEUTRALIZE_OPS
+            or func_name in _WQ_REMOTE_ONLY_OP_NAMES
+            or func_name in _LOCAL_ONLY_FUNCTIONS
+        )
+
+    @staticmethod
+    def _operator_catalog_can_decide(func_name: str) -> bool:
+        """官方目录能否对该算子下"不存在"的结论。
+
+        - 目录可用 → 能（目录是唯一权威）
+        - 目录不可用 → 算子落在兜底核心集之外，**不能**判定。
+          此时放行 + warning，而不是把目录故障变成误杀。
+        """
+        from . import wq_operator_catalog
+
+        if wq_operator_catalog.catalog_status()["available"]:
+            return True
+        return func_name in wq_operator_catalog.fallback_operators()
+
+    def _build_remote_only_stub(
+        self, func_name: str, args_str: str
+    ) -> Callable[[pd.DataFrame], pd.Series]:
+        """官方目录里存在、但本地没有运行时实现的算子 → 远程执行占位。
+
+        解析子表达式只为捕获括号/嵌套错误；真正求值由 WQ BRAIN 完成。
+        """
+        for part in self._split_top_level(args_str):
+            if part.strip():
+                self._sub_parse(part.strip())
+
+        def _wq_remote_stub(df, _name=func_name):
+            raise RuntimeError(
+                f"算子 '{_name}' 仅支持 WQ BRAIN 远程执行，不可本地计算"
+            )
+        return _wq_remote_stub
+
     def _validate_window(self, window: int, func_name: str) -> int:
         """Validate rolling window size."""
         if window < 1:
@@ -593,21 +823,53 @@ class ExpressionParser:
         # Apply operator aliases (e.g., delta -> ts_delta, delay -> ts_shift)
         func_name = self._OPERATOR_ALIASES.get(func_name, func_name)
 
-        if self.mode == "wq" and func_name not in _WQ_OPERATORS:
-            # WQ 模式对白名单外算子**一律硬报错**，不再 warning 后透传。
-            # 原因：透传意味着 validate_expression 永远返回 OK，subagent 会把
-            # 必然被服务端拒绝的表达式提交上去，白等 1~7 分钟模拟才发现算子不存在。
-            # 注意 WQ 算子表是官方固定且完全可枚举的（见 _WQ_OPERATORS / _WQ_REMOTE_ONLY_OPS），
-            # 不像 data field 有数万条、服务端无法全知——所以算子可以硬拒，字段必须降级（见
-            # wq_field_catalog）。宁可误拒让人显式确认，也不要静默放行。
-            hint = _WQ_REPLACEMENTS.get(func_name, "")
-            hint_msg = f"，替代方案：{hint}" if hint else ""
-            if func_name in _LOCAL_ONLY_OPERATORS:
-                raise ValueError(f"WQ 模式下不支持算子 '{func_name}'{hint_msg}")
-            raise ValueError(
-                f"WQ 模式下不存在算子 '{func_name}'（WQ BRAIN 会报 "
-                f"unknown operator）{hint_msg}"
-            )
+        if self.mode == "wq" and func_name in _WQ_OPERATORS:
+            # 官方目录确认存在、但本地没有运行时实现的算子（如 signed_power /
+            # ts_zscore / ts_regression / group_backfill ...）。
+            # 这里只做**结构**校验（括号、嵌套），求值交给 WQ BRAIN 远程执行。
+            # 绝不能落到末尾的 "Unknown function" 分支——那会把合规表达式判死。
+            if not self._is_locally_implemented(func_name):
+                return self._build_remote_only_stub(func_name, args_str)
+
+        if self.mode == "wq":
+            # 官方目录可用时以目录为唯一权威；目录不可用时用兜底核心集，
+            # 仍不可判定则**放行**（降级为 warning 由 wq_validator 负责标注）——
+            # 算子白名单过时就是误杀源，宁可放过也不可误杀（见 wq_operator_catalog）。
+            from . import wq_operator_catalog
+
+            if wq_operator_catalog.is_blacklisted(func_name):
+                hint = _WQ_REPLACEMENTS.get(func_name, "")
+                hint_msg = f"，替代方案：{hint}" if hint else ""
+                raise ValueError(
+                    f"WQ 模式下不存在算子 '{func_name}'（pandas 惯用法，"
+                    f"从来不是 WQ BRAIN 算子）{hint_msg}"
+                )
+            if func_name not in _WQ_OPERATORS:
+                # 本地专有算子（tanh / rsi / sigmoid ...）在任何目录状态下都
+                # **必然**不是 WQ 算子——这是本地语义定义，不是目录查不到。
+                # 所以它们不参与降级：拒绝对所有目录状态都成立。
+                if func_name in _LOCAL_ONLY_UNSUPPORTED:
+                    hint = _WQ_REPLACEMENTS.get(func_name, "")
+                    hint_msg = f"，替代方案：{hint}" if hint else ""
+                    raise ValueError(f"WQ 模式下不支持算子 '{func_name}'{hint_msg}")
+                # 历史别名（ts_argmin / sign_power / humpdecay ...）：官方目录里
+                # 没有这个名字，但历史上真实跑通过 —— 不得判死，放行并提示官方写法。
+                official = wq_operator_catalog.resolve_alias(func_name)
+                if official:
+                    logger.info(
+                        "WQ 模式：'%s' 为历史别名，官方写法是 '%s'",
+                        func_name, official,
+                    )
+                    return self._build_remote_only_stub(func_name, args_str)
+                if self._operator_catalog_can_decide(func_name):
+                    hint = _WQ_REPLACEMENTS.get(func_name, "")
+                    hint_msg = f"，替代方案：{hint}" if hint else ""
+                    raise ValueError(
+                        f"WQ 模式下不存在算子 '{func_name}'（WQ BRAIN 会报 "
+                        f"unknown operator）{hint_msg}"
+                    )
+                # 目录不可用且不在兜底核心集内：放行，交给服务端判定。
+                return self._build_remote_only_stub(func_name, args_str)
 
         if func_name in _WQ_REMOTE_ONLY_OPS:
             if self.mode != "wq":
@@ -1164,15 +1426,6 @@ def extract_components(expression: str) -> dict:
 # ------------------------------------------------------------------
 # WQ 提交前校验所需的公开查询接口（任务 2/3/4 使用）
 # ------------------------------------------------------------------
-
-def wq_operators() -> set:
-    """WQ 模式下允许的全部算子名（含仅远程可执行的 operator-typed 算子）。
-
-    算子表是官方固定且完全可枚举的，所以可以**硬拒**白名单外的算子，
-    不像 data field 需要目录 + 降级（见 wq_field_catalog 模块头注释）。
-    """
-    return set(_WQ_OPERATORS) | set(_WQ_REMOTE_ONLY_OPS)
-
 
 def variable_category(name: str) -> str:
     """判定 FASTEXPR 里一个变量名的来源类别。

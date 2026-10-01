@@ -1,0 +1,692 @@
+[
+ {
+  "id": "0mr0KXYK",
+  "expr": "group_rank(-ts_rank(ts_backfill(news_short_interest,60),252), subindustry)",
+  "sharpe": -0.4,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "E5RXrgQ0",
+  "expr": "group_rank(ts_zscore(ts_backfill(mean_event_sentiment_score, 20), 60) - ts_zscore(ts_backfill(mean_composite_sentiment_score, 20), 60), subindustry)",
+  "sharpe": 0.02,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "vR239Axa",
+  "expr": "0.45*trade_when(ts_std_dev(volume/adv20, 60) > ts_mean(ts_std_dev(volume/adv20, 60), 252), group_rank(-(fnd6_newa2v1300_ni - fnd6_newa2v1300_oancf)/cap, subindustry), -1) + 0.30*group_rank(-(assets/ts_delay(assets, 252) - 1), subindustry) + 0.25*group_rank(fnd6_newa2v1300_oancf/cap, subindustry)",
+  "sharpe": 0.66,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "kqg2XN3O",
+  "expr": "group_rank(-(((abs(returns)/(volume*close)) - ts_mean(abs(returns)/(volume*close), 120)) / ts_std_dev(abs(returns)/(volume*close), 120)) * ts_rank(volume/adv20, 20), subindustry)",
+  "sharpe": -0.45,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "MP3oXQ9M",
+  "expr": "trade_when(ts_rank(close, 250) < 0.35, group_rank(0.60*ts_rank(close, 20) + 0.40*ts_rank(volume/adv20, 20) - 0.50*ts_rank(returns, 60), subindustry), -1)",
+  "sharpe": -0.45,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "0mr0dnlK",
+  "expr": "group_rank(-0.45*ts_rank(close, 250) - 0.30*ts_rank(close, 20) + 0.25*ts_rank(volume/adv20, 250) - 0.35*ts_rank(returns, 60), subindustry)",
+  "sharpe": 0.64,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "QPKLqRG5",
+  "expr": "0.70 * trade_when(volume > 1.30 * adv20 && (high - low) / close < 0.75 * ts_mean((high - low) / close, 20), group_rank(-((ts_regression(returns, signed_power(volume / adv20, 1.5), 20) / (ts_std_dev(returns, 20) + 0.0001) - ts_mean(ts_regression(returns, signed_power(volume / adv20, 1.5), 20) / (ts_std_dev(returns, 20) + 0.0001), 60)) / (ts_std_dev(ts_regression(returns, signed_power(volume / adv20, 1.5), 20) / (ts_std_dev(returns, 20) + 0.0001), 60) + 0.0001)), subindustry), -1) + 0.30 * group_rank(ts_rank(est_eps / close, 126), subindustry)",
+  "sharpe": 0.71,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "6XKv3o7P",
+  "expr": "0.75 * trade_when(ts_corr(returns, volume/adv20, 20) < -0.15 && volume > 1.05 * adv20, group_rank(-((ts_covariance(returns, volume/adv20, 15)/(ts_std_dev(returns, 20)*ts_std_dev(volume/adv20, 20) + 0.0001) - ts_mean(ts_covariance(returns, volume/adv20, 15)/(ts_std_dev(returns, 20)*ts_std_dev(volume/adv20, 20) + 0.0001), 60))/(ts_std_dev(ts_covariance(returns, volume/adv20, 15)/(ts_std_dev(returns, 20)*ts_std_dev(volume/adv20, 20) + 0.0001), 60) + 0.0001)), subindustry), -1) + 0.10 * group_rank(free_cash_flow_reported_value/equity, subindustry) + 0.08 * group_rank(ts_rank(operating_income/equity, 126), subindustry) + 0.07 * group_rank(ts_rank(est_eps/close, 126), subindustry)",
+  "sharpe": 1.07,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "blO5VEkq",
+  "expr": "0.85*group_rank((ts_mean((high-low)/close,10)/(ts_std_dev(returns,20)+0.0001)-ts_mean(ts_mean((high-low)/close,10)/(ts_std_dev(returns,20)+0.0001),120))/ts_std_dev(ts_mean((high-low)/close,10)/(ts_std_dev(returns,20)+0.0001),120),subindustry) + 0.15*group_rank(ts_rank(free_cash_flow_per_share/close,126),subindustry)",
+  "sharpe": 1.12,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "2rmbQ1n6",
+  "expr": "group_rank(-(ts_delta(ts_delta(log(close),1),1)-ts_mean(ts_delta(ts_delta(log(close),1),1),120))/ts_std_dev(ts_delta(ts_delta(log(close),1),1),120), subindustry)",
+  "sharpe": 1.2,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "786EqvEL",
+  "expr": "trade_when(ts_std_dev(volume/adv20, 60) > ts_mean(ts_std_dev(volume/adv20, 60), 252), group_rank(-(fnd6_newa2v1300_ni - fnd6_newa2v1300_oancf)/(cap+0.0001), subindustry), -1)",
+  "sharpe": 0.72,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "786Egx71",
+  "expr": "group_rank(ts_zscore(ts_mean((high-low)/close,10)/(ts_std_dev(returns,20)+0.0001),120),subindustry)",
+  "sharpe": 1.05,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "58goVOXN",
+  "expr": "group_rank(0.65*ts_rank(-ts_mean(power(returns,3),120)/(power(ts_std_dev(returns,120),3)+0.000001),252) + 0.35*ts_rank(ts_corr(abs(returns),volume,20),252), subindustry)",
+  "sharpe": 0.84,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "qM0oZPRZ",
+  "expr": "0.50*group_rank(ts_rank(anl4_ebit_value/close,126),subindustry) + 0.30*trade_when(ts_std_dev(returns,10) < ts_std_dev(returns,60), group_rank(-ts_decay_linear((close-open)/(high-low),6),subindustry), -1) + 0.20*trade_when(ts_std_dev(returns,10) > ts_std_dev(returns,60), group_rank(ts_rank(returns,20),subindustry), -1)",
+  "sharpe": 2.09,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "pw5Agqlq",
+  "expr": "0.50*trade_when(ts_std_dev((high-low)/close,10)<0.75*ts_std_dev((high-low)/close,60) && volume<0.90*adv20, group_rank(ts_decay_linear(winsorize(ts_rank(operating_income/sales*sales/assets,126)+ts_rank(-(assets-ts_delay(assets,252))/ts_delay(assets,252),126),std=3),6),subindustry), -1) + 0.20*group_rank(ts_rank(est_eps/close,252),industry) + 0.15*group_rank(ts_rank(operating_income/equity,126),subindustry) + 0.15*group_rank(-(fnd6_newa2v1300_ni-fnd6_newa2v1300_oancf)/cap,subindustry)",
+  "sharpe": 2.07,
+  "status": "ACTIVE"
+ },
+ {
+  "id": "88Pd1MGX",
+  "expr": "group_rank(-ts_rank(winsorize((income - cashflow_op) / assets, std=4), 252), subindustry)",
+  "sharpe": -0.08,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "3qVZLNle",
+  "expr": "winsorize(group_neutralize(ts_decay_linear(-(ts_sum(sign(returns) * volume, 20) / (20 * adv20) - ts_sum(returns, 20)), 10), subindustry), std=4)",
+  "sharpe": -0.15,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "qM0oqYbO",
+  "expr": "group_neutralize(ts_rank(max(high - low, max(abs(high - ts_delay(close, 1)), abs(low - ts_delay(close, 1))))/close, 63) - winsorize((close - low)/(high - low), std=4), subindustry)",
+  "sharpe": 1.83,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "e7QoRpNp",
+  "expr": "trade_when(ts_rank(volume/adv20, 22) > 0.25, 0.65 * group_rank(signed_power(-ts_decay_linear((close - open)/(high - low) * signed_power(volume/adv20, 0.5), 15), 0.7), subindustry) + 0.20 * group_rank(ts_rank(free_cash_flow_reported_value/equity, 126), subindustry) + 0.15 * group_rank(ts_rank(free_cash_flow_per_share/close, 252), subindustry), -1)",
+  "sharpe": 1.66,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "RR6nnOJz",
+  "expr": "group_rank(-(income - cashflow_op) / assets, subindustry)",
+  "sharpe": 0.25,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "leKbbWPe",
+  "expr": "trade_when(ts_std_dev(returns,10) < ts_std_dev(returns,60), group_rank(-ts_decay_linear((close-open)/(high-low),6),subindustry), -1)",
+  "sharpe": 1.09,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "88PddKz7",
+  "expr": "group_zscore(ts_rank(ts_mean(abs(returns) / (volume * close), 20), 252), subindustry)",
+  "sharpe": -0.25,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "6XKvvvV5",
+  "expr": "winsorize(group_neutralize(ts_zscore(ts_sum(sign(close - vwap) * volume, 20) / (20 * adv20), 60) - ts_zscore(ts_sum(returns, 20), 60), subindustry), std=4)",
+  "sharpe": 0.17,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "npPMRjr3",
+  "expr": "-group_zscore(ts_rank(abs(returns) / (volume * close), 63), subindustry)",
+  "sharpe": -0.66,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "1YZQqv0z",
+  "expr": "0.60*group_rank(0.5*group_rank(free_cash_flow_reported_value/equity,subindustry)+0.5*group_rank(ts_rank(free_cash_flow_per_share/close,126),subindustry),subindustry) + 0.40*group_rank(group_zscore(-ts_decay_linear((close-open)/(high-low)*signed_power(volume/adv20,0.5),8),subindustry) - 0.5*group_zscore(free_cash_flow_reported_value/equity,subindustry), subindustry)",
+  "sharpe": 2.23,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "omWM11bn",
+  "expr": "0.15 * group_rank(signed_power(-ts_decay_linear((close - ts_delay(close,1))/(high - low) * signed_power(volume/adv20, 0.5), 15), 0.7), subindustry) + 0.15 * group_rank(free_cash_flow_reported_value/equity, subindustry) + 0.10 * group_rank(ts_rank(free_cash_flow_per_share/close, 126), subindustry) + 0.60 * group_rank(-ts_zscore(implied_volatility_mean_skew_30, 60), subindustry)",
+  "sharpe": 1.79,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "1YZbrGLm",
+  "expr": "trade_when(ts_corr(returns, volume/adv20, 20) < -0.15 && volume > 1.05 * adv20, group_rank(-ts_decay_linear(winsorize(ts_covariance(returns, volume/adv20, 20), std=2.5), 6), subindustry), -1)",
+  "sharpe": 0.12,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "QPKkwmjK",
+  "expr": "trade_when(ts_rank(volume/adv20, 22) > 0.3, 0.35 * group_rank(signed_power(-ts_decay_linear((close - ts_delay(close,1))/(high - low) * signed_power(volume/adv20, 0.5), 15), 0.7), subindustry) + 0.25 * group_rank(free_cash_flow_reported_value/equity, subindustry) + 0.20 * group_rank(ts_rank(free_cash_flow_per_share/close, 126), subindustry) + 0.20 * group_rank(-ts_zscore(implied_volatility_mean_skew_30, 60), subindustry), -1)",
+  "sharpe": 2.05,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "88P9wJml",
+  "expr": "0.60*group_rank(-ts_rank(ts_mean(abs(returns)/(volume*close),20),252),subindustry)+0.40*group_rank(-ts_rank(winsorize(ts_mean(power(returns,4),60)-3*power(ts_std_dev(returns,60),4),std=3),252),subindustry)",
+  "sharpe": 0.13,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "3qVrK8jZ",
+  "expr": "0.70 * group_rank(-ts_decay_linear(winsorize(ts_zscore(ts_corr(returns, volume/adv20, 20), 60), std=2.5), 8), subindustry) + 0.30 * group_rank(free_cash_flow_reported_value/equity, subindustry)",
+  "sharpe": 0.36,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "WjeQZoRo",
+  "expr": "0.6*group_rank(-(implied_volatility_mean_skew_30 - ts_mean(implied_volatility_mean_skew_30,252))/ts_std_dev(implied_volatility_mean_skew_30,252), subindustry) + 0.4*group_rank(ts_corr(implied_volatility_mean_30, ts_std_dev(returns,20), 60), subindustry)",
+  "sharpe": 0.84,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "npPRjxed",
+  "expr": "0.70 * group_rank(-ts_decay_linear(winsorize((close - ts_sum(close*volume,10)/ts_sum(volume,10))/ts_std_dev(returns,20)/close, std=2.5), 8), subindustry) + 0.30 * group_rank(ts_rank(operating_income/sales*sales/assets, 126), subindustry)",
+  "sharpe": 0.97,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "1YZb3pxX",
+  "expr": "0.45 * group_rank(-ts_rank(beta_last_60_days_spy, 126), subindustry) + 0.35 * trade_when(ts_std_dev(returns,10) < 0.80*ts_std_dev(returns,60), group_rank(ts_rank(operating_income/sales*sales/assets, 126), subindustry), -1) + 0.20 * group_rank(ts_rank(-ts_delta(beta_last_60_days_spy, 20), 126), subindustry)",
+  "sharpe": 0.92,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "N1VmGVZL",
+  "expr": "trade_when(ts_mean(returns, 10) > 0, group_rank(-ts_rank(close, 252), subindustry), -1)",
+  "sharpe": 0.32,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "npPRln9z",
+  "expr": "0.50*trade_when(ts_std_dev(returns,10)<0.85*ts_std_dev(returns,60), group_rank(signed_power(-ts_decay_linear((close-open)/(high-low)*signed_power(volume/adv20,0.5),10),0.7),subindustry), -1) + 0.25*group_rank(ts_rank(ts_decay_linear(ts_delta(snt_buzz,5),10),126),subindustry) + 0.25*group_rank(ts_rank(sales/assets,126),subindustry)",
+  "sharpe": 1.21,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "LLZawlj6",
+  "expr": "trade_when(ts_std_dev(returns,10) < 0.85*ts_std_dev(returns,60), -group_rank(winsorize(ts_zscore(ts_sum(power(returns-ts_mean(returns,60),3),60),250)/(power(ts_std_dev(returns,60),3)+0.0001), std=2.5), subindustry), -1)",
+  "sharpe": 0.76,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "vR2Mb3jQ",
+  "expr": "0.45*trade_when(ts_std_dev(returns,10)<0.80*ts_std_dev(returns,60) && volume<0.90*adv20, group_rank(ts_decay_linear(winsorize(ts_rank(operating_income/sales*sales/assets,126)+ts_rank((free_cash_flow_reported_value-ts_mean(free_cash_flow_reported_value,252))/equity,126),std=3),6),subindustry), -1) + 0.25*group_zscore(ts_rank(-beta_last_60_days_spy,126),industry) + 0.30*group_rank(ts_rank(fnd6_newa2v1300_ni/equity,126),subindustry)",
+  "sharpe": 1.06,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "A1vZ2pLY",
+  "expr": "trade_when(abs(returns)/(volume*close) > 1.35*ts_mean(abs(returns)/(volume*close), 30), -ts_decay_linear((close - (high+low)/2)/(high-low), 8), -1)",
+  "sharpe": 0.9,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "XgJQOOkm",
+  "expr": "0.35 * group_rank(signed_power(-ts_decay_linear((close - ts_delay(close,1))/(high - low) * signed_power(volume/adv20, 0.5), 8), 0.7), subindustry) + 0.25 * group_rank(free_cash_flow_reported_value/equity, subindustry) + 0.15 * group_rank(ts_rank(free_cash_flow_per_share/close, 126), subindustry) + 0.25 * group_rank(winsorize(group_zscore(ts_backfill(implied_volatility_mean_skew_30, 20), subindustry), std=2), subindustry)",
+  "sharpe": 1.88,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "6XKVNKXL",
+  "expr": "0.50*trade_when(ts_std_dev((high-low)/close,10)<0.75*ts_std_dev((high-low)/close,60) && volume<0.90*adv20, group_rank(ts_decay_linear(winsorize(ts_rank(operating_income/sales*sales/assets,126)+ts_rank(free_cash_flow_reported_value/equity,126),std=3),6),subindustry), -1) + 0.20*group_rank(ts_rank(est_eps/close,252),industry) + 0.15*group_rank(ts_rank(operating_income/equity,126),subindustry) + 0.15*group_rank(-(fnd6_newa2v1300_ni-fnd6_newa2v1300_oancf)/cap,subindustry)",
+  "sharpe": 2.1,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "1YZbP3AJ",
+  "expr": "0.40*trade_when(ts_std_dev(returns,10)<0.85*ts_std_dev(returns,60), group_rank(signed_power(-ts_decay_linear((close-open)/(high-low)*signed_power(volume/adv20,0.5),10),0.7),subindustry), -1) + 0.30*group_rank(free_cash_flow_reported_value/equity,subindustry) + 0.30*group_rank(ts_rank(free_cash_flow_per_share/close,126),subindustry)",
+  "sharpe": 2.54,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "omW5a19k",
+  "expr": "rank(ts_mean(volume/adv20,5) * (open-close)/(high-low)) * (1 - ts_rank(abs((close-open)/(high-low)), 20)) * rank(-ts_corr(close, volume, 20))",
+  "sharpe": 1.52,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "88P9Rj8a",
+  "expr": "0.24 * trade_when(ts_mean(volume,5) < 0.8 * ts_mean(volume,20) && ts_mean((high-low)/close,5) < ts_mean((high-low)/close,20), group_rank(ts_decay_linear(winsorize((max(open,close)-high)/(high-low), std=3), 8), subindustry), -1) + 0.36 * trade_when(volume > 1.2 * ts_mean(volume,20), group_rank(ts_decay_linear(winsorize(-(min(open,close)-low)/(high-low), std=3), 8), subindustry), -1) + 0.40 * group_rank(ts_rank(operating_income / equity, 126), subindustry)",
+  "sharpe": 0.81,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "RR6QEmag",
+  "expr": "0.35*group_rank(-ts_decay_linear((close-ts_delay(close,1))/(high-low)*power(volume/adv20,0.5),8),subindustry) + 0.25*group_rank(free_cash_flow_reported_value/equity,subindustry) + 0.15*group_rank(ts_rank(free_cash_flow_per_share/close,126),subindustry) + 0.25*group_rank(ts_rank(implied_volatility_mean_30,252) - ts_rank(implied_volatility_mean_skew_30,252),subindustry)",
+  "sharpe": 2.14,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "LLZa5oGn",
+  "expr": "0.45*group_rank(-ts_decay_linear(winsorize((close-ts_delay(close,1))/(ts_delay(close,1)+0.001),std=3),10),subindustry) + 0.20*group_rank(ts_rank(snt_buzz,60),subindustry) + 0.20*group_rank(-implied_volatility_mean_30,subindustry) + 0.15*group_rank(ts_rank(operating_income/equity,126),subindustry)",
+  "sharpe": 0.82,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "QPKkYN2K",
+  "expr": "rank(rank((ts_rank(close/ts_mean(close,20)-1,252)-0.5)*(ts_rank(free_cash_flow_reported_value/equity,252)-0.5)) + rank((ts_rank(close/ts_mean(close,20)-1,252)-0.5)*(ts_rank(snt_buzz,252)-0.5)) + rank((ts_rank(free_cash_flow_reported_value/equity,252)-0.5)*(ts_rank(snt_buzz,252)-0.5)) + 0.5*rank((ts_rank(close/ts_mean(close,20)-1,252)-0.5)*abs(ts_rank(close/ts_mean(close,20)-1,252)-0.5)))",
+  "sharpe": -1.39,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "A1vZQbpE",
+  "expr": "rank((ts_mean(abs(returns)/(close*volume),20)-ts_mean(ts_mean(abs(returns)/(close*volume),20),20))/ts_std_dev(ts_mean(abs(returns)/(close*volume),20),20)) * sign(ts_sum(power(returns,3),20)) * rank(implied_volatility_mean_30)",
+  "sharpe": 0.04,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "npPRAxj8",
+  "expr": "rank(volume/adv20) * rank(1/(1+abs((close-open)/(high-low)))) * rank(-ts_corr(close, volume, 20))",
+  "sharpe": 1.06,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "YPMK2LdA",
+  "expr": "-ts_decay_linear(ts_zscore(news_atr_ratio, 120), 15)",
+  "sharpe": 0.88,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "omW59Mj6",
+  "expr": "0.40*trade_when(ts_std_dev((high-low)/close,10)<0.75*ts_std_dev((high-low)/close,60) && volume<0.90*adv20, group_rank(ts_decay_linear(winsorize(ts_rank(operating_income/sales*sales/assets,126)+ts_rank(free_cash_flow_reported_value/equity,126),std=3),6),subindustry), -1) + 0.16*group_rank(ts_rank(est_eps/close,252),industry) + 0.12*group_rank(ts_rank(operating_income/equity,126),subindustry) + 0.12*group_rank(-(fnd6_newa2v1300_ni-fnd6_newa2v1300_oancf)/cap,subindustry) + 0.20*group_rank(ts_rank(ts_delta(snt_buzz,5),60),subindustry)",
+  "sharpe": 2.38,
+  "status": "ACTIVE"
+ },
+ {
+  "id": "MP3R5Pen",
+  "expr": "-group_rank(ts_delta(close, 5) / ts_delay(close, 5) / (ts_sum(abs(returns), 20) + 0.001), subindustry)",
+  "sharpe": 1.37,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "P0galzjL",
+  "expr": "group_rank(ts_mean(pv13_custretsig_retsig, 5), subindustry)",
+  "sharpe": -1.13,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "omW5zwqJ",
+  "expr": "-rank(implied_volatility_mean_30 - historical_volatility_30)",
+  "sharpe": -0.05,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "KPrd6o3z",
+  "expr": "-ts_zscore(news_atr_ratio, 60)",
+  "sharpe": 1.03,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "1YZbLxnJ",
+  "expr": "-rank(ts_rank(implied_volatility_mean_skew_180, 252))",
+  "sharpe": -0.3,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "leKOJ6Xe",
+  "expr": "0.55*group_rank(ts_decay_linear(ts_rank(ts_mean(open/ts_delay(close,1),20)-ts_mean(close/open,20),126),12),subindustry) + 0.45*group_rank(ts_rank(operating_income/sales,126),subindustry)",
+  "sharpe": 0.84,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "88P9AJRz",
+  "expr": "group_rank(-ts_decay_linear(winsorize(ts_mean(power((high-low)/close,2),10)/(power(ts_std_dev(returns,10),2)+0.0001),std=3),6),subindustry)",
+  "sharpe": 0.28,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "3qVrdRPe",
+  "expr": "0.55*group_rank(ts_rank(ts_mean(open/ts_delay(close,1),5)-ts_mean(close/open,5),126),subindustry) + 0.45*group_rank(ts_rank(operating_income/sales,126),subindustry)",
+  "sharpe": 1.61,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "npPR0nG8",
+  "expr": "-group_zscore(ts_rank(ts_sum(ts_regression(returns, group_mean(returns, 1, market), 60), 20), 252), subindustry)",
+  "sharpe": 0.45,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "O08PeYJg",
+  "expr": "0.55*trade_when(ts_rank(ts_mean(power((returns-ts_mean(returns,60))/(ts_std_dev(returns,60)+0.0001),4),60),250)>0.75, group_rank(-ts_decay_linear(winsorize((returns-ts_mean(returns,60))/(ts_std_dev(returns,60)+0.0001),std=3),5),subindustry), -1) + 0.45*group_rank(ts_rank(operating_income/sales,126),subindustry)",
+  "sharpe": 0.65,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "786bO791",
+  "expr": "0.40 * group_rank(signed_power(-ts_decay_linear((close - ts_delay(close,1))/(high - low) * signed_power(volume/adv20, 0.5), 8), 0.7), subindustry) + 0.30 * group_rank(free_cash_flow_reported_value/equity, subindustry) + 0.30 * group_rank(ts_rank(free_cash_flow_per_share/close, 126), subindustry)",
+  "sharpe": 2.21,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "XgJQE0X8",
+  "expr": "0.45*group_rank(ts_decay_linear(winsorize(-(close - ts_sum(close*volume,10)/ts_sum(volume,10))/(ts_std_dev(returns,20)*close), std=2.5),8), subindustry) + 0.35*group_rank(free_cash_flow_reported_value/equity, subindustry) + 0.20*group_rank(-(fnd6_newa2v1300_ni - fnd6_newa2v1300_oancf)/cap, subindustry)",
+  "sharpe": 1.61,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "LLZaxGb9",
+  "expr": "group_rank(ts_backfill(implied_volatility_mean_60 - historical_volatility_60, 20), subindustry)",
+  "sharpe": 0.05,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "LLZaxp8e",
+  "expr": "0.45*group_rank(-ts_decay_linear(winsorize(ts_mean(power((high-low)/close,2),10)/(power(ts_std_dev(returns,10),2)+0.0001),std=3),6),subindustry) + 0.30*group_rank(ts_rank(operating_income/sales,126),subindustry) + 0.25*group_rank(-(fnd6_newa2v1300_ni-fnd6_newa2v1300_oancf)/cap,subindustry)",
+  "sharpe": 0.65,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "vR2MgX7a",
+  "expr": "0.55*group_rank(ts_decay_linear(winsorize(ts_mean((close-open)/(high-low)*volume, 10)/(ts_mean(volume,20)+0.001), std=3), 8), subindustry) + 0.45*group_rank(ts_rank(operating_income/equity, 126), subindustry)",
+  "sharpe": 0.03,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "P0gQvKgM",
+  "expr": "0.25 * group_rank(ts_rank(-beta_last_60_days_spy, 126), subindustry) + 0.40 * group_rank(free_cash_flow_reported_value/equity, subindustry) + 0.35 * trade_when(ts_std_dev(returns, 10) < 0.80 * ts_std_dev(returns, 60), group_rank(ts_decay_linear(winsorize(-(close - ts_sum(close*volume, 5)/ts_sum(volume, 5))/(ts_std_dev(returns, 20)*close), std=3), 6), subindustry), -1)",
+  "sharpe": 1.75,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "wpbKLNbl",
+  "expr": "0.40 * trade_when(volume > 1.20 * adv20 && ts_sum(returns < 0, 5) >= 3, group_rank(ts_decay_linear(winsorize(signed_power((min(open,close) - low - (high - max(open,close)))/(high - low), 0.8), std=3), 6), subindustry), -1) + 0.35 * group_rank(free_cash_flow_reported_value/equity, subindustry) + 0.25 * group_rank(ts_rank(free_cash_flow_per_share/close, 126), subindustry)",
+  "sharpe": 1.37,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "3qVQz6O0",
+  "expr": "0.25 * trade_when(ts_std_dev(returns, 10) < 0.85 * ts_std_dev(returns, 60), group_rank(ts_decay_linear(winsorize((ts_sum(volume * sign(returns), 5)/(ts_sum(volume, 5) + 0.0001) - ts_sum(volume * sign(returns), 20)/(ts_sum(volume, 20) + 0.0001)), std=3), 10), subindustry), -1) + 0.45 * group_rank(ts_rank(operating_income/equity, 126), subindustry) + 0.30 * group_rank(ts_rank(est_eps/close, 126), subindustry)",
+  "sharpe": 1.6,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "QPKZEJoQ",
+  "expr": "0.40 * trade_when(volume > 1.30 * adv20 && (high - low)/close < 0.75 * ts_mean((high - low)/close, 20), group_rank(-ts_decay_linear(winsorize(ts_regression(returns, signed_power(volume/adv20, 1.5), 20)/(ts_std_dev(returns, 20) + 0.0001), std=2.5), 6), subindustry), -1) + 0.35 * group_rank(-(fnd6_newa2v1300_ni - fnd6_newa2v1300_oancf)/cap, subindustry) + 0.25 * group_rank(ts_rank(free_cash_flow_per_share/close, 126), subindustry)",
+  "sharpe": 1.16,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "GrO1nXqP",
+  "expr": "0.35 * trade_when(volume > 1.30 * adv20 && (high - low)/close < 0.72 * ts_mean((high - low)/close, 20), group_rank(ts_decay_linear(winsorize(-(close - vwap)/(ts_std_dev(returns, 20)*close), std=3), 6), subindustry), -1) + 0.35 * group_rank(free_cash_flow_reported_value/equity, subindustry) + 0.30 * group_rank(ts_rank(est_eps/close, 126), subindustry)",
+  "sharpe": 1.27,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "88P5OLjq",
+  "expr": "0.35 * trade_when(ts_sum(min(returns, 0)^2, 20) > ts_sum(max(returns, 0)^2, 20), group_rank(ts_decay_linear(winsorize((min(open,close) - low - (high - max(open,close)))/(high - low), std=3), 6), subindustry), -1) + 0.25 * group_rank(free_cash_flow_reported_value/equity, subindustry) + 0.20 * group_rank(ts_rank(free_cash_flow_per_share/close, 126), subindustry) + 0.20 * group_rank(-(fnd6_newa2v1300_ni - fnd6_newa2v1300_oancf)/cap, subindustry)",
+  "sharpe": 1.84,
+  "status": "ACTIVE"
+ },
+ {
+  "id": "mL6wqq6X",
+  "expr": "0.50 * trade_when(ts_sum(power(min(returns,0),2), 30) > 0.80 * ts_sum(power(max(returns,0),2), 30), group_rank(ts_decay_linear(winsorize(ts_regression(returns, signed_power(returns, 2.0), 25) / (ts_std_dev(returns, 30) + 0.0001), std=2.5), 10), subindustry), -1) + 0.30 * group_rank(ts_rank(operating_income/equity, 126), subindustry) + 0.20 * group_rank(free_cash_flow_reported_value/equity, subindustry)",
+  "sharpe": 0.59,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "JjQM59Px",
+  "expr": "0.35 * trade_when(volume > 1.20 * adv20 && ts_sum(returns < 0, 5) >= 3, group_rank(ts_decay_linear(winsorize(signed_power((min(open,close) - low - (high - max(open,close)))/(high - low), 0.8), std=3), 6), subindustry), -1) + 0.35 * group_rank(free_cash_flow_reported_value/equity, subindustry) + 0.30 * group_rank(-(fnd6_newa2v1300_ni - fnd6_newa2v1300_oancf)/cap, subindustry)",
+  "sharpe": 1.26,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "QPKZrGn5",
+  "expr": "group_rank((close - ts_rank(close, 10)) / (ts_std_dev(high, 10) + 0.001), subindustry)",
+  "sharpe": -0.06,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "blOG7mxZ",
+  "expr": "0.30 * trade_when(ts_corr(returns, volume/adv20, 20) < -0.15 && volume > 1.05 * adv20, group_rank(-ts_decay_linear(winsorize(ts_covariance(returns, volume/adv20, 15)/(ts_std_dev(returns, 20)*ts_std_dev(volume/adv20, 20) + 0.0001), std=3), 6), subindustry), -1) + 0.30 * group_rank(free_cash_flow_reported_value/equity, subindustry) + 0.25 * group_rank(ts_rank(operating_income/equity, 126), subindustry) + 0.15 * group_rank(ts_rank(est_eps/close, 126), subindustry)",
+  "sharpe": 1.4,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "GrO1Ek00",
+  "expr": "0.40 * trade_when(abs(open - ts_delay(close, 1)) / ts_delay(close, 1) > 1.2 * ts_std_dev(returns, 20) && volume > 1.10 * adv20, group_rank(-ts_decay_linear(winsorize((close - open) / (abs(open - ts_delay(close, 1)) + 0.001), std=3), 6), subindustry), -1) + 0.30 * group_rank(ts_rank(operating_income/equity, 126), subindustry) + 0.30 * group_rank(-(fnd6_newa2v1300_ni - fnd6_newa2v1300_oancf)/cap, subindustry)",
+  "sharpe": 1.44,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "E5ROoWbr",
+  "expr": "0.40 * trade_when(abs((close - open)/(high - low)) > 0.75 && volume > 1.10 * adv20, group_rank(signed_power(-ts_decay_linear((close - open)/(high - low) * signed_power(volume/adv20, 0.5), 8), 0.75), subindustry), -1) + 0.30 * group_rank(free_cash_flow_reported_value/equity, subindustry) + 0.30 * group_rank(ts_rank(free_cash_flow_per_share/close, 126), subindustry)",
+  "sharpe": 1.52,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "3qVQdvgz",
+  "expr": "0.45 * trade_when((abs(returns)/(volume*close)) > 1.40 * ts_mean(abs(returns)/(volume*close), 30), group_rank(-ts_decay_linear(winsorize(((close - open) / (high - low)) * signed_power(returns, 0.5), std=3), 8), subindustry), -1) + 0.30 * group_rank(ts_rank(operating_income/equity, 126), subindustry) + 0.25 * group_rank(-(fnd6_newa2v1300_ni - fnd6_newa2v1300_oancf)/cap, subindustry)",
+  "sharpe": 0.49,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "ZYAPZRmQ",
+  "expr": "0.40 * trade_when(volume < 0.80 * adv20 && abs(close - ts_sum(close*volume,20)/ts_sum(volume,20)) > 1.3 * ts_std_dev(returns,20)*close, group_rank(ts_decay_linear(winsorize(-(close - ts_sum(close*volume,20)/ts_sum(volume,20))/(ts_std_dev(returns,20)*close), std=3), 6), subindustry), -1) + 0.30 * group_rank(ts_rank(est_eps/close, 126), subindustry) + 0.30 * group_rank(free_cash_flow_reported_value/equity, subindustry)",
+  "sharpe": 1.45,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "omW8eQbv",
+  "expr": "0.40 * trade_when(ts_sum(power(min(returns,0),2), 25) > 1.25 * ts_sum(power(max(returns,0),2), 25), group_rank(-ts_decay_linear(winsorize(ts_regression(returns, signed_power(returns, 2.5), 30) / (ts_std_dev(returns, 30) + 0.0001), std=2.5), 8), subindustry), -1) + 0.30 * group_rank(free_cash_flow_reported_value/equity, subindustry) + 0.30 * group_rank(-(fnd6_newa2v1300_ni - fnd6_newa2v1300_oancf)/cap, subindustry)",
+  "sharpe": 1.1,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "1YZk9wpk",
+  "expr": "0.35 * group_rank(-(fnd6_newa2v1300_ni - fnd6_newa2v1300_oancf)/cap, subindustry) + 0.30 * group_rank(ts_rank(est_eps/close, 126), subindustry) + 0.35 * trade_when((high - low)/close > 1.25 * ts_mean((high - low)/close, 20) && volume > 1.1 * adv20, group_rank(ts_decay_linear(winsorize(-(close - ts_sum(close*volume, 10)/ts_sum(volume, 10))/(ts_std_dev(returns, 20)*close), std=3), 6), subindustry), -1)",
+  "sharpe": 1.11,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "JjQMwZ3m",
+  "expr": "0.50 * trade_when(abs(returns)/(volume*close) > 1.35 * ts_mean(abs(returns)/(volume*close), 30), group_rank(-ts_decay_linear((close - (high+low)/2)/(high-low), 8), subindustry), -1) + 0.30 * group_rank(ts_rank(operating_income/equity, 126), subindustry) + 0.20 * group_rank(-(fnd6_newa2v1300_ni - fnd6_newa2v1300_oancf)/cap, subindustry)",
+  "sharpe": 1.66,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "j28zvql5",
+  "expr": "0.35 * trade_when(ts_std_dev(returns,10) > 1.2*ts_std_dev(returns,60) && (high-low)/close > 1.15*ts_mean((high-low)/close,20), group_rank(ts_decay_linear(winsorize(-(close - ts_sum(close*volume,5)/ts_sum(volume,5))/(ts_std_dev(returns,20)*close), std=3), 6), subindustry), -1) + 0.35 * group_rank(-(fnd6_newa2v1300_ni - fnd6_newa2v1300_oancf)/cap, subindustry) + 0.30 * group_rank(free_cash_flow_reported_value/equity, subindustry)",
+  "sharpe": 1.53,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "npPxxLOM",
+  "expr": "0.50 * trade_when(abs(returns)/(volume*close) > 1.35 * ts_mean(abs(returns)/(volume*close), 30), group_rank(-ts_decay_linear((close - ts_sum(close*volume,5)/ts_sum(volume,5))/(ts_std_dev(returns,20)*close), 8), subindustry), -1) + 0.30 * group_rank(ts_rank(operating_income/equity, 126), subindustry) + 0.20 * group_rank(-(fnd6_newa2v1300_ni - fnd6_newa2v1300_oancf)/cap, subindustry)",
+  "sharpe": 1.17,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "YPMLLedR",
+  "expr": "0.40 * trade_when(volume < 0.85 * adv20 && abs(close - ts_sum(close*volume,10)/ts_sum(volume,10)) > 1.5 * ts_std_dev(close,20), group_rank(ts_decay_linear(winsorize(-(close - ts_sum(close*volume,10)/ts_sum(volume,10))/(ts_std_dev(returns,20)*close), std=3), 6), subindustry), -1) + 0.35 * group_rank(-(fnd6_newa2v1300_ni - fnd6_newa2v1300_oancf)/cap, subindustry) + 0.25 * group_rank(free_cash_flow_reported_value/equity, subindustry)",
+  "sharpe": 1.0,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "YPMLPEoR",
+  "expr": "0.40 * group_rank(signed_power(-ts_decay_linear((close - open)/(high - low) * signed_power(volume/adv20, 0.5), 8), 0.7), subindustry) + 0.30 * group_rank(free_cash_flow_reported_value/equity, subindustry) + 0.30 * group_rank(ts_rank(free_cash_flow_per_share/close, 126), subindustry)",
+  "sharpe": 2.32,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "7868pRex",
+  "expr": "0.60 * trade_when((abs(returns)/(volume*close)) > 2.0 * ts_mean(abs(returns)/(volume*close), 40), group_rank(-ts_decay_linear(winsorize((close - (high + low)/2)/(ts_std_dev(returns,20)*close), std=3), 8), subindustry), -1) + 0.25 * group_rank(ts_rank(operating_income/equity, 126), subindustry) + 0.15 * group_rank(-(fnd6_newa2v1300_ni - fnd6_newa2v1300_oancf)/cap, subindustry)",
+  "sharpe": 1.18,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "3qVqNMWP",
+  "expr": "0.55 * trade_when(ts_sum(power(min(returns,0),2),20) > ts_sum(power(max(returns,0),2),20) && (high-low)/close > 1.15*ts_mean((high-low)/close,20), group_rank(ts_decay_linear(winsorize(-(close - ts_sum(close*volume,5)/ts_sum(volume,5))/(ts_std_dev(returns,20)*close), std=3), 6), subindustry), -1) + 0.45 * group_rank(-(fnd6_newa2v1300_ni - fnd6_newa2v1300_oancf)/cap, subindustry)",
+  "sharpe": 0.93,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "786852wL",
+  "expr": "0.45 * trade_when(ts_mean(power(min(returns,0),2),20) > ts_mean(power(max(returns,0),2),20), group_rank(-ts_decay_linear(winsorize(signed_power(ts_mean(power((returns - ts_mean(returns,40))/(ts_std_dev(returns,40)+0.0001), 3), 40), 0.8), std=3), 6), subindustry), -1) + 0.30 * group_rank(free_cash_flow_reported_value/equity, subindustry) + 0.25 * group_rank(ts_rank(operating_income/equity, 126), subindustry)",
+  "sharpe": 0.85,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "0mrmZYm8",
+  "expr": "0.55 * group_neutralize(trade_when((abs(returns)/(volume*close)) > 1.5 * ts_mean(abs(returns)/(volume*close), 40), group_rank(-ts_decay_linear(winsorize((close - (high + low)/2)/(ts_std_dev(returns,20)*close), std=3), 8), subindustry), -1), subindustry) + 0.25 * group_rank(ts_rank(operating_income/equity, 126), subindustry) + 0.20 * group_rank(-(fnd6_newa2v1300_ni - fnd6_newa2v1300_oancf)/cap, subindustry)",
+  "sharpe": 1.28,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "wpbp7e9p",
+  "expr": "0.35 * trade_when(volume > 1.15 * adv20 && ts_sum(returns < 0, 5) >= 3, group_rank(ts_decay_linear(winsorize((min(open,close) - low - (high - max(open,close)))/(high - low), std=3), 6), subindustry), -1) + 0.35 * group_rank(free_cash_flow_reported_value/equity, subindustry) + 0.30 * group_rank(-(fnd6_newa2v1300_ni - fnd6_newa2v1300_oancf)/cap, subindustry)",
+  "sharpe": 1.26,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "gJZJNmWK",
+  "expr": "0.40 * group_rank(ts_decay_linear(winsorize((close - open)/(high - low) * signed_power(volume/adv20, 0.5), std=3), 8), subindustry) + 0.30 * group_rank(ts_rank(operating_income/equity, 126), subindustry) + 0.30 * group_rank(-(fnd6_newa2v1300_ni - fnd6_newa2v1300_oancf)/cap, subindustry)",
+  "sharpe": -0.01,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "88P8YkYW",
+  "expr": "0.40 * trade_when(ts_std_dev(returns,20) < 0.85 * ts_mean(ts_std_dev(returns,20),60) && volume > 1.2 * adv20, group_rank(ts_decay_linear(-(close - ts_mean(close,20)) / (ts_std_dev(returns,20) * close), 6), subindustry), -1) + 0.60 * group_rank(ts_rank(operating_income/equity, 126), subindustry)",
+  "sharpe": 1.56,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "e7Q7veVd",
+  "expr": "0.35*trade_when(ts_rank(abs(ts_delta(ts_delta(returns,5),5)),60) > 0.80 && volume < 0.85*adv20, group_rank(-ts_decay_linear(winsorize(ts_delta(ts_delta(returns,5),5), std=3), 8), subindustry), -1) + 0.30*group_rank(ts_rank(operating_income/equity, 126), subindustry) + 0.35*group_rank(free_cash_flow_reported_value/equity, subindustry)",
+  "sharpe": 1.17,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "1YZYPYmQ",
+  "expr": "0.50*trade_when(ts_sum(power(min(returns,0),2),20) > ts_sum(power(max(returns,0),2),20) && volume>adv20, group_rank(ts_decay_linear(winsorize((close+open-2*vwap)/(ts_std_dev(returns,20)*close),std=3),6),subindustry), -1) + 0.25*group_rank(free_cash_flow_reported_value/equity,subindustry) + 0.25*group_rank(ts_rank(free_cash_flow_per_share/close,126),subindustry)",
+  "sharpe": 2.08,
+  "status": "ACTIVE"
+ },
+ {
+  "id": "zqbqGG7K",
+  "expr": "0.50*group_rank(-ts_decay_linear((close-(high+low)/2)/(ts_std_dev(returns,20)*close),8) * (0.5 + ts_rank(abs(returns)/(volume*close),60)), subindustry) + 0.30*group_rank(ts_rank(operating_income/equity,126),subindustry) + 0.20*group_rank(-(fnd6_newa2v1300_ni-fnd6_newa2v1300_oancf)/cap,subindustry)",
+  "sharpe": 2.01,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "N1V1zQgq",
+  "expr": "0.40*group_rank(ts_backfill(-(pcr_oi_270 - ts_mean(pcr_oi_270,60))/(ts_std_dev(pcr_oi_270,60)+0.001),20),subindustry) + 0.30*group_rank(free_cash_flow_reported_value/equity,subindustry) + 0.30*group_rank(ts_rank(free_cash_flow_per_share/close,126),subindustry)",
+  "sharpe": 1.86,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "1YZYKabk",
+  "expr": "0.35*trade_when(volume > 1.25*adv20 && abs(returns) < 0.6*ts_std_dev(returns,20), group_rank(ts_decay_linear(winsorize(-(close-vwap)/(ts_std_dev(returns,20)*close), std=3),6),subindustry), -1) + 0.40*group_rank(ts_rank(operating_income/equity,126),subindustry) + 0.25*group_rank(ts_rank(est_eps/close,126),subindustry)",
+  "sharpe": 2.09,
+  "status": "ACTIVE"
+ },
+ {
+  "id": "QPKPNpaw",
+  "expr": "group_rank(-ts_decay_linear(ts_regression(returns, power(returns,2), 63), 10), subindustry)",
+  "sharpe": 1.2,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "xAbA2oaq",
+  "expr": "0.5 * trade_when((ts_std_dev(returns,20) < 0.85 * ts_mean(ts_std_dev(returns,20),60)) && (volume > 1.2 * adv20), group_rank(-ts_decay_linear((close - ts_mean(close,20)) / ts_std_dev(returns,20), 8), subindustry), -1) + 0.5 * group_rank(-(fnd6_newa2v1300_ni - fnd6_newa2v1300_oancf) / cap, subindustry)",
+  "sharpe": 0.64,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "mL6L0YQ5",
+  "expr": "trade_when(volume > 1.1 * adv20, group_rank(ts_decay_linear(winsorize((min(open,close) - low - (high - max(open,close))) / (high - low), std=3), 8), subindustry), -1)",
+  "sharpe": 0.68,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "9qWqdA2K",
+  "expr": "0.50*trade_when(volume > 1.25*adv20 && abs(returns) < 0.6*ts_std_dev(returns,20), group_rank(ts_decay_linear(winsorize(-(close-vwap)/(ts_std_dev(returns,20)*close), std=3),6),subindustry), -1) + 0.25*group_rank(-(fnd6_newa2v1300_ni - fnd6_newa2v1300_oancf)/cap, subindustry) + 0.25*group_rank(free_cash_flow_reported_value/equity, subindustry)",
+  "sharpe": 1.19,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "YPMPlVmA",
+  "expr": "0.50*trade_when(ts_rank(abs(returns)/(volume*close),60)>0.85, group_rank(-ts_decay_linear((close-(high+low)/2)/(ts_std_dev(returns,20)*close),6),subindustry), -1) + 0.25*group_rank(-(fnd6_newa2v1300_ni-fnd6_newa2v1300_oancf)/cap,subindustry) + 0.25*group_rank(free_cash_flow_reported_value/equity,subindustry)",
+  "sharpe": 1.22,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "xAbA1Ngn",
+  "expr": "0.5*group_rank(-ts_decay_linear(winsorize(ts_covariance(returns, ts_delta(log(volume), 1), 20) / (ts_std_dev(returns, 20) * ts_std_dev(ts_delta(log(volume), 1), 20)), std=3), 8), subindustry) + 0.3*group_rank(fnd6_newa1v1300_gp/assets, subindustry) + 0.2*group_rank(free_cash_flow_reported_value/equity, subindustry)",
+  "sharpe": 0.69,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "e7Q768Kp",
+  "expr": "0.40 * trade_when(ts_corr(returns, ts_delay(returns,1), 40) < -0.05, group_rank(ts_rank(ts_backfill(est_eps,20)/close, 63) - ts_rank(ts_delay(ts_backfill(est_eps,20)/close, 20), 63), subindustry), -1) + 0.35 * group_rank(-(fnd6_newa2v1300_ni - fnd6_newa2v1300_oancf)/cap, subindustry) + 0.25 * group_rank(free_cash_flow_reported_value/equity, subindustry)",
+  "sharpe": 1.39,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "gJZJZX9e",
+  "expr": "0.40 * trade_when(ts_sum(power(min(returns,0),2),20) > ts_sum(power(max(returns,0),2),20), group_rank(-ts_decay_linear(winsorize(ts_regression(returns, power(returns,2), 63)/(ts_std_dev(returns,63)+0.0001), std=2.5),10), subindustry), -1) + 0.25*group_rank(free_cash_flow_reported_value/equity, subindustry) + 0.15*group_rank(ts_rank(free_cash_flow_per_share/close, 126), subindustry) + 0.20*group_rank(-(fnd6_newa2v1300_ni - fnd6_newa2v1300_oancf)/cap, subindustry)",
+  "sharpe": 1.83,
+  "status": "ACTIVE"
+ },
+ {
+  "id": "omWmW6Pv",
+  "expr": "0.50 * trade_when(abs(returns)/(volume*close) > 1.25*ts_mean(abs(returns)/(volume*close),20), group_rank(ts_decay_linear((ts_sum(power(min(returns,0),2),40) - ts_sum(power(max(returns,0),2),40))/(ts_sum(power(returns,2),40)+0.0001), 6), subindustry), -1) + 0.30 * group_rank(ts_rank(free_cash_flow_reported_value/equity,126), subindustry) + 0.20 * group_rank(ts_rank(operating_income/sales,126), subindustry)",
+  "sharpe": 0.85,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "rKeKeW13",
+  "expr": "group_rank(trade_when(volume > 1.2 * adv20, ts_decay_linear(winsorize((min(open, close) - low - (high - max(open, close))) / (ts_std_dev(returns, 20) * close), std=3), 8), -1), subindustry)",
+  "sharpe": 0.86,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "E5R5RowP",
+  "expr": "0.50*trade_when(volume < 0.85*adv20, group_rank(-ts_decay_linear(winsorize(ts_delta(ts_delta(returns,5),5), std=3), 8), subindustry), -1) + 0.25*group_rank(-(fnd6_newa1v1300_capx/assets), subindustry) + 0.25*group_rank(ts_rank(operating_income/assets, 126), subindustry)",
+  "sharpe": 1.12,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "rKeKO7z9",
+  "expr": "ts_decay_linear(signed_power(ts_covariance(returns, ts_delta(log(volume), 1), 20) / (ts_std_dev(returns, 20) * ts_std_dev(ts_delta(log(volume), 1), 20)), 0.7), 5)",
+  "sharpe": -0.81,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "Wjej7Rnk",
+  "expr": "0.40*group_rank(ts_backfill(-(pcr_oi_270 - ts_mean(pcr_oi_270,60))/(ts_std_dev(pcr_oi_270,60)+0.001),20),subindustry) + 0.40*group_rank(-(fnd6_newa2v1300_ni - fnd6_newa2v1300_oancf)/cap,subindustry) + 0.20*group_rank(free_cash_flow_reported_value/equity,subindustry)",
+  "sharpe": 1.32,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "Vk0k756b",
+  "expr": "group_rank(-ts_decay_linear(winsorize((open - ts_delay(low,1))/(ts_delay(high,1) - ts_delay(low,1)) - (close - open)/(high - low), std=3), 8), subindustry)",
+  "sharpe": -1.38,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "GrOrlK33",
+  "expr": "0.40*trade_when(ts_rank((high-low)/sqrt(volume*close),20) > 0.75, group_rank(ts_decay_linear(winsorize(-(close - ts_sum(close*volume,20)/ts_sum(volume,20))/(ts_std_dev(returns,20)*close),std=3),8),subindustry), -1) + 0.35*group_rank(free_cash_flow_reported_value/equity,subindustry) + 0.25*group_rank(ts_rank(free_cash_flow_per_share/close,126),subindustry)",
+  "sharpe": 1.61,
+  "status": "ACTIVE"
+ },
+ {
+  "id": "88P8lN9m",
+  "expr": "group_neutralize(0.38*group_zscore(-signed_power(ts_decay_linear(ts_sum(sign(returns)*volume,5)/ts_sum(volume,5),6),0.7),subindustry)+0.34*group_zscore(-(fnd6_newa2v1300_ni-fnd6_newa2v1300_oancf)/cap,subindustry)+0.28*group_zscore(ts_backfill(free_cash_flow_reported_value/cap,60),subindustry),subindustry)",
+  "sharpe": 1.12,
+  "status": "UNSUBMITTED"
+ },
+ {
+  "id": "qM0Mj0lE",
+  "expr": "0.40*group_rank(-ts_decay_linear(winsorize(ts_regression(returns, power(returns,2), 63)/(ts_std_dev(returns,63)+0.0001), std=3),10), subindustry) + 0.25*group_rank(free_cash_flow_reported_value/equity, subindustry) + 0.15*group_rank(ts_rank(free_cash_flow_per_share/close, 126), subindustry) + 0.20*group_rank(-(fnd6_newa2v1300_ni - fnd6_newa2v1300_oancf)/cap, subindustry)",
+  "sharpe": 2.27,
+  "status": "UNSUBMITTED"
+ }
+]

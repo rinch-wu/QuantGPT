@@ -13,7 +13,7 @@ import time
 
 import pytest
 
-from quantgpt import wq_field_catalog
+from quantgpt import wq_field_catalog, wq_operator_catalog
 from quantgpt.expression_parser import (
     ExpressionParser,
     parse_expression,
@@ -61,6 +61,118 @@ def catalog(tmp_path, monkeypatch):
     wq_field_catalog.reset_for_tests()
     yield path
     wq_field_catalog.reset_for_tests()
+
+
+# 官方 `GET /operators` 实测返回的算子（scope 原样保留）。
+# 只收测试真正引用到的算子 + 27 个真实跑通过的核心算子，保证"目录可用"路径被覆盖。
+_CATALOG_OPERATORS = {
+    "add": (["REGULAR"], "Arithmetic"),
+    "and": (["REGULAR"], "Logical"),
+    "divide": (["REGULAR"], "Arithmetic"),
+    "equal": (["REGULAR"], "Logical"),
+    "greater": (["REGULAR"], "Logical"),
+    "greater_equal": (["REGULAR"], "Logical"),
+    "if_else": (["REGULAR"], "Logical"),
+    "inverse": (["REGULAR"], "Arithmetic"),
+    "is_nan": (["REGULAR"], "Logical"),
+    "less": (["REGULAR"], "Logical"),
+    "less_equal": (["REGULAR"], "Logical"),
+    "multiply": (["REGULAR"], "Arithmetic"),
+    "not": (["REGULAR"], "Logical"),
+    "not_equal": (["REGULAR"], "Logical"),
+    "or": (["REGULAR"], "Logical"),
+    "reverse": (["REGULAR"], "Arithmetic"),
+    "signed_power": (["REGULAR"], "Power"),
+    "subtract": (["REGULAR"], "Arithmetic"),
+    "densify": (["REGULAR"], "Group"),
+    "group_backfill": (["REGULAR"], "Group"),
+    "group_scale": (["REGULAR"], "Group"),
+    "hump": (["REGULAR"], "Other"),
+    "kth_element": (["REGULAR"], "Other"),
+    "ts_arg_max": (["REGULAR"], "Time Series"),
+    "ts_arg_min": (["REGULAR"], "Time Series"),
+    "ts_count_nans": (["REGULAR"], "Time Series"),
+    "ts_product": (["REGULAR"], "Time Series"),
+    "ts_quantile": (["REGULAR"], "Time Series"),
+    "ts_scale": (["REGULAR"], "Time Series"),
+    "ts_step": (["REGULAR"], "Time Series"),
+    # 27 个真实在 WQ BRAIN 跑通过的算子
+    "abs": (["REGULAR"], "Arithmetic"),
+    "group_mean": (["REGULAR"], "Group"),
+    "group_neutralize": (["REGULAR"], "Group"),
+    "group_rank": (["REGULAR"], "Group"),
+    "group_zscore": (["REGULAR"], "Group"),
+    "log": (["REGULAR"], "Arithmetic"),
+    "max": (["REGULAR"], "Arithmetic"),
+    "min": (["REGULAR"], "Arithmetic"),
+    "power": (["REGULAR"], "Power"),
+    "rank": (["REGULAR"], "Cross Sectional"),
+    "sign": (["REGULAR"], "Arithmetic"),
+    "sqrt": (["REGULAR"], "Arithmetic"),
+    "trade_when": (["REGULAR"], "Other"),
+    "ts_backfill": (["REGULAR"], "Time Series"),
+    "ts_corr": (["REGULAR"], "Time Series"),
+    "ts_covariance": (["REGULAR"], "Time Series"),
+    "ts_decay_linear": (["REGULAR"], "Time Series"),
+    "ts_delay": (["REGULAR"], "Time Series"),
+    "ts_delta": (["REGULAR"], "Time Series"),
+    "ts_mean": (["REGULAR"], "Time Series"),
+    "ts_rank": (["REGULAR"], "Time Series"),
+    "ts_regression": (["REGULAR"], "Time Series"),
+    "ts_std_dev": (["REGULAR"], "Time Series"),
+    "ts_sum": (["REGULAR"], "Time Series"),
+    "ts_zscore": (["REGULAR"], "Time Series"),
+    "winsorize": (["REGULAR"], "Other"),
+    # COMBO 作用域专用
+    "vector_neut": (["COMBO"], "Combination"),
+    "group_vector_neut": (["COMBO"], "Combination"),
+    "vec_max": (["COMBO"], "Combination"),
+    "vec_count": (["COMBO"], "Combination"),
+    "vec_ir": (["COMBO"], "Combination"),
+    "vec_norm": (["COMBO"], "Combination"),
+    "vec_range": (["COMBO"], "Combination"),
+    "vec_stddev": (["COMBO"], "Combination"),
+}
+
+
+def _operator_catalog_payload() -> dict:
+    return {
+        "fetched_at": time.time(),
+        "count": len(_CATALOG_OPERATORS),
+        "operators": [
+            {
+                "name": name,
+                "category": category,
+                "scope": scope,
+                "definition": "",
+                "description": "",
+            }
+            for name, (scope, category) in _CATALOG_OPERATORS.items()
+        ],
+    }
+
+
+@pytest.fixture
+def operator_catalog(tmp_path, monkeypatch):
+    """写入一份算子目录缓存，让算子校验走"目录可用"路径。"""
+    path = tmp_path / "wq_operator_catalog.json"
+    path.write_text(json.dumps(_operator_catalog_payload()), encoding="utf-8")
+    monkeypatch.setenv("QUANTGPT_WQ_OPERATOR_CATALOG_PATH", str(path))
+    wq_operator_catalog.reset_for_tests()
+    yield path
+    wq_operator_catalog.reset_for_tests()
+
+
+@pytest.fixture
+def no_operator_catalog(tmp_path, monkeypatch):
+    """算子目录缺失：模拟 WQ 不可达 / 首次拉取失败。"""
+    monkeypatch.setenv(
+        "QUANTGPT_WQ_OPERATOR_CATALOG_PATH",
+        str(tmp_path / "no_such_operator_catalog.json"),
+    )
+    wq_operator_catalog.reset_for_tests()
+    yield
+    wq_operator_catalog.reset_for_tests()
 
 
 @pytest.fixture
@@ -128,13 +240,13 @@ class TestThreeErrorClassesBlocked:
             ("ts_mean(unknown_macro_series, 20)", "field"),
         ],
     )
-    def test_error_is_blocked(self, catalog, expression, expected_kind):
+    def test_error_is_blocked(self, catalog, operator_catalog, expression, expected_kind):
         result = validate_expression(expression, mode="wq")
         assert result.status == "error", result.message
         assert result.blocked
         assert expected_kind in [e.kind for e in result.errors]
 
-    def test_where_gives_actionable_hint(self, catalog):
+    def test_where_gives_actionable_hint(self, catalog, operator_catalog):
         """`where` 必须给出可操作的替代建议（trade_when）。"""
         result = validate_expression("where(returns > 0, 1, -1)", mode="wq")
         operator_errors = [e for e in result.errors if e.kind == "operator"]
@@ -172,18 +284,22 @@ class TestThreeErrorClassesBlocked:
         # 本地照常可用
         assert callable(parse_expression("where(close > open, 1, -1)", mode="local"))
 
-    def test_where_not_in_wq_operator_whitelist(self):
+    def test_where_not_in_wq_operator_whitelist(self, operator_catalog):
         assert "where" not in wq_operators()
         assert "trade_when" in wq_operators()
 
     @pytest.mark.parametrize("operator", ["tanh", "sigmoid", "ema", "rsi", "clip"])
-    def test_local_only_operators_rejected(self, catalog, operator):
+    def test_local_only_operators_rejected(self, catalog, operator, operator_catalog):
         result = validate_expression(f"{operator}(close)", mode="wq")
         assert result.status == "error"
         assert any(e.kind == "operator" for e in result.errors)
 
-    def test_typo_operator_rejected(self, catalog):
-        """白名单外算子不再透传——拼写错误必须本地拦住。"""
+    def test_typo_operator_rejected(self, catalog, operator_catalog):
+        """官方目录可用时，白名单外算子不再透传——拼写错误必须本地拦住。
+
+        目录不可用时同一表达式只产生 warning（降级不误杀），见
+        TestCatalogDegradation。
+        """
         result = validate_expression("ts_mena(close, 20)", mode="wq")
         assert result.status == "error"
         assert any(e.name == "ts_mena" and e.kind == "operator" for e in result.errors)
@@ -542,9 +658,12 @@ class TestMcpToolWiring:
             for n in ast.walk(tree)
             if isinstance(n, ast.FunctionDef) and n.name == "validate_expression"
         )
+        args = [a.arg for a in fn.args.args]
+        # strict 必须仍是**可选**参数（不能变成必填，破坏既有调用方）
         defaults = [ast.unparse(d) for d in fn.args.defaults]
         assert any("False" in d for d in defaults), "strict 默认必须是 False"
-        assert [a.arg for a in fn.args.args][-1] == "strict"
+        assert args[:4] == ["expression", "mode", "strict", "expression_type"], args
+        assert "expression_type" in args, "必须暴露 expression_type（REGULAR/COMBO）"
 
     def test_precheck_signature_matches_spec(self):
         import ast
@@ -556,10 +675,11 @@ class TestMcpToolWiring:
             if isinstance(n, ast.FunctionDef) and n.name == "precheck_expression"
         )
         args = [a.arg for a in fn.args.args]
-        assert args == ["expression", "mode", "strict"], args
-        # mode 默认 "wq"，strict 默认 True
+        assert args[:3] == ["expression", "mode", "strict"], args
+        assert "expression_type" in args, "必须暴露 expression_type（REGULAR/COMBO）"
+        # mode 默认 "wq"，strict 默认 True，expression_type 默认 "REGULAR"
         defaults = [ast.literal_eval(d) for d in fn.args.defaults]
-        assert defaults == ["wq", True], defaults
+        assert defaults == ["wq", True, "REGULAR"], defaults
 
     def test_tools_delegate_to_validator(self):
         """两个工具都必须走 wq_validator，不能内联重复实现校验逻辑。"""

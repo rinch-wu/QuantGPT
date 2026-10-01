@@ -9,19 +9,31 @@
 四道闸门
 --------
 1. **语法**：括号配对（唯一原本就有效的检查）。
-2. **Operator**：算子必须存在于 :func:`wq_operators`，且能本地解析。
+2. **Operator**：算子以官方 ``GET /operators`` 目录为唯一权威
+   （:mod:`quantgpt.wq_operator_catalog`），并按 ``expression_type`` 校验
+   ``scope``（REGULAR / COMBO）。
 3. **Variable/Field**：按 :func:`variable_category` 分类——内置变量与分组字段
    用内置白名单，data field 才查 :mod:`quantgpt.wq_field_catalog` 的真实目录。
 4. **量纲**：表达式长度、嵌套深度、adv{N} 范围、常数与价格列做加减等。
 
 严重级别契约
 ------------
-- ``error``   —— 必然被 WQ 拒绝，**禁止提交**（白名单外的算子、已确认不在目录的字段）。
-- ``warning`` —— 可能失败，建议小样本验证（**目录不可用**时的未知字段）。
+- ``error``   —— 必然被 WQ 拒绝，**禁止提交**（目录确认不存在的算子、作用域不符
+  的算子、已确认不在目录的字段、语法残缺）。
+- ``warning`` —— 可能失败，建议小样本验证（**目录不可用**时的未知字段/算子）。
 
-⚠️ 关键设计约束：**误杀合规表达式比漏检更严重**。WQ data field 有数万条且服务端
-持续新增，所以目录不可用时绝不能把"查不到"当成"不存在"——那会让整个 cron 在
-目录过期期间全线拒绝所有表达式。宁可放行并标注，让服务端去发现新增字段。
+⚠️ 关键设计约束：**误杀合规表达式比漏检更严重**。
+
+- WQ data field 有数万条且服务端持续新增，所以字段目录不可用时绝不能把"查不到"
+  当成"不存在"——那会让整个 cron 在目录过期期间全线拒绝所有表达式。
+- 算子白名单同理，而且**已有实测代价**：手写白名单上线后，
+  187 条真实在 WQ BRAIN 跑通过的表达式被误杀 48 条（误杀率 25.7%，
+  其中 ``signed_power`` 33 次 / ``ts_zscore`` 12 次），连 Sharpe 2.29 的
+  ACTIVE 因子 ``9qWZ9G2x`` 都被判 error。所以算子校验同样以官方目录为唯一权威，
+  目录不可用时降级为 warning 而不是硬拒。
+
+两种情况下 ``where`` 都会被拦下（:data:`wq_operator_catalog.BLACKLISTED_OPERATORS`）：
+它是 pandas 三元选择惯用法，官方 66 个算子里从来没有它。
 
 ``mode="local"`` 路径完全不受本模块影响：A 股本地引擎继续用 pandas 语义
 （含 ``where``），行为保持 100% 兼容。
@@ -34,9 +46,11 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from . import wq_operator_catalog
 from .expression_parser import (
     ExpressionParser,
     _LOCAL_ONLY_COLUMNS,
+    _LOCAL_ONLY_UNSUPPORTED,
     _WQ_REPLACEMENTS,
     _WQ_UNIT_PATTERNS,
     parse_expression,
@@ -47,6 +61,19 @@ from .expression_parser import (
 # 算子别名（delta→ts_delta、ts_std_dev→ts_std 等）。必须在白名单比对**之前**归一，
 # 否则 `ts_std_dev` 这类合法别名会被误判成"WQ 不存在的算子"——这是最典型的误杀。
 _OPERATOR_ALIASES = ExpressionParser._OPERATOR_ALIASES
+
+# 解析器归一后的内部规范名集合（ts_std_dev → ts_std / ts_delay → ts_shift ...）。
+# 这些名字**不是**用户写的东西，而是解析器内部的分派键：官方名被归到它们身上。
+# 对这类名字再提示"不是官方算子名"是自相矛盾的（用户写的正是官方名），
+# 因此别名提示只在用户真的写了历史写法时才发出。
+# 反向索引：解析器内部规范名 ← 用户可能写的**官方**名字。
+# 例：内部键 ts_std，既可能是用户写的官方名 ts_std_dev 归一而来，
+# 也可能是用户直接写的历史写法 ts_std。前者不该提示"不是官方算子名"，
+# 后者应该提示。靠"这个键是官方名的归一目标吗"来区分两者。
+_PARSER_CANONICAL_NAMES = frozenset(_OPERATOR_ALIASES.values())
+_OFFICIAL_SPELLINGS_INBOUND: dict[str, set[str]] = {}
+for _alias_key, _canonical in _OPERATOR_ALIASES.items():
+    _OFFICIAL_SPELLINGS_INBOUND.setdefault(_canonical, set()).add(_alias_key)
 
 _MSG_WQ_OK = "OK: expression is valid for WQ BRAIN submission"
 _MSG_LOCAL_OK = "OK: expression is valid"
@@ -167,8 +194,104 @@ def _validation_dummy() -> Any:
     return _DUMMY_DF
 
 
+# 顶层二元运算符。出现在表达式**末尾**时意味着操作数缺失（`close +`），
+# 这类残缺表达式服务端必然拒绝，本地必须秒级拦下。
+# 不能用 \b 边界：' + ' 两侧可能紧贴括号/标识符。
+_TRAILING_BINARY_RE = re.compile(
+    r"(?:[+\-*/^]|(?<![<>=!])[<>]=?(?![=])|(?<![<>!=])[=!]=?)\s*$"
+)
+
+
+def _has_official_spelling(expression: str, canonical: str) -> bool:
+    """表达式里是否以**官方拼写**调用了该算子（而非历史写法）。
+
+    ``extract_names`` 会先做别名归一，所以 ``ts_arg_max`` 和 ``ts_argmin``
+    在下游都变成 ``ts_argmax``。判断提示该不该发出，必须回看原文：
+    用户写的是官方名就不该被提醒改写，用户写的是历史写法才该提醒。
+    """
+    import re as _re
+
+    inbound = _OFFICIAL_SPELLINGS_INBOUND.get(canonical, ())
+    if not inbound:
+        return False
+    for spelling in inbound:
+        if _re.search(rf"(?<![A-Za-z0-9_]){_re.escape(spelling)}\s*\(", expression.lower()):
+            return True
+    return False
+
+
+def _dangling_operator_layer(expression: str) -> tuple[int, str] | None:
+    """找出"尾随运算符"所在的括号层，返回 ``(深度, 运算符文本)``；无命中返回 None。
+
+    必须**逐层**检查：``rank(close +)`` 最外层以 ``)`` 结尾，但内层 ``(close +)``
+    本身就是残缺的。只看表层会漏掉绝大多数实际场景（表达式总带外层函数包装）。
+
+    深度 0 表示顶层裸表达式；深度 1 表示最外层函数调用的参数层。
+    """
+    stack: list[int] = []  # 每个未闭合 '(' 的下标
+    for pos, ch in enumerate(expression):
+        if ch == "(":
+            stack.append(pos)
+        elif ch == ")":
+            if not stack:
+                continue
+            open_at = stack.pop()
+            hit = _segment_ends_with_operator(expression, open_at + 1, pos)
+            if hit:
+                return (len(stack), hit)
+    # 未闭合的 '('：整段剩余部分视作一层
+    open_at = stack[-1] if stack else 0
+    start = open_at + 1 if stack else 0
+    hit = _segment_ends_with_operator(expression, start, len(expression))
+    return (len(stack), hit) if hit else None
+
+
+def _segment_ends_with_operator(expression: str, start: int, end: int) -> str:
+    """检查 ``expression[start:end]``（右开区间）是否以二元运算符结尾。
+
+    返回命中的运算符文本或空串。
+    """
+    i = end - 1
+    while i >= start and expression[i].isspace():
+        i -= 1
+    if i < start:
+        return ""
+    token = expression[start : i + 1]  # i 已跳过尾部空白，不再 rstrip
+    match = _TRAILING_BINARY_RE.search(token)
+    if not match:
+        return ""
+    # 整段都是运算符 → 空括号 / 纯符号，交给解析器报错
+    if re.fullmatch(r"[+\-*/^<>!=]+", token):
+        return ""
+    # 运算符左边是 '(' 或 ',' → 一元符号 / 参数起始，不算残缺
+    left = expression[start : start + match.start()].rstrip()
+    if left.endswith(("(", ",")):
+        return ""
+    return match.group(0).strip()
+
+
+def _check_dangling_operator(expression: str) -> Issue | None:
+    """闸门①续：某一层以运算符结尾 = 操作数缺失。
+
+    生产日志暴露的漏网之鱼：``rank(close +)`` 在 wq 模式下被解析成合法表达式
+    （尾部空串落进"未知字段透传"分支），直到服务端才报语法错误，白等 1~7 分钟。
+    """
+    stripped = expression.rstrip()
+    found = _dangling_operator_layer(stripped)
+    if not found:
+        return None
+    depth, token = found
+    layer = "顶层" if depth == 0 else f"第 {depth} 层括号内"
+    return Issue(
+        "syntax",
+        token,
+        f"{layer}的运算符 '{token}' 后缺少操作数（表达式不完整）",
+        "补全右操作数，如 rank(close - open)；一元正负号（如 -1）是合法的",
+    )
+
+
 def _check_balanced_parens(expression: str) -> Issue | None:
-    """闸门①：括号配对。这是上游唯一真正生效的检查，必须保留。"""
+    """闸门①：括号配对。这是上游唯一原本就真正生效的检查，必须保留。"""
     depth = 0
     for i, ch in enumerate(expression):
         if ch == "(":
@@ -268,6 +391,162 @@ def _collect_names(expression: str) -> tuple[set[str], set[str]]:
     return extract_names(expression)
 
 
+def _validate_operators(
+    expression: str,
+    expression_type: str = "REGULAR",
+) -> tuple[list[Issue], list[Issue], dict[str, Any]]:
+    """闸门②：算子合法性 + variable 作用域（REGULAR / COMBO）。
+
+    判定顺序（goal 文档 4.2）：
+    1. 官方目录可用 → 目录是唯一权威，附带 scope 判定；
+    2. 目录不可用 → 用兜底核心集（官方确认过的全集）；
+    3. 两种情况下 ``where`` 均拦截（显式黑名单）。
+
+    **降级原则**：目录不可用时，算子校验只产生 warning，绝不阻断。
+    算子白名单一旦过时就是误杀源（实测误杀率 25.7%），宁可放过也不可误杀。
+    """
+    status = wq_operator_catalog.catalog_status()
+    catalog_available = status["available"]
+    allowed_ops = wq_operators()
+    errors: list[Issue] = []
+    warnings: list[Issue] = []
+
+    ops, _ = _collect_names(expression)  # ops 已做别名归一
+    for op in sorted(ops):
+        # --- 黑名单优先：`where` 从来不是 WQ 算子 ---
+        if wq_operator_catalog.is_blacklisted(op):
+            hint = _WQ_REPLACEMENTS.get(op, "")
+            hint_msg = f"，替代方案：{hint}" if hint else ""
+            errors.append(
+                Issue(
+                    "operator",
+                    op,
+                    f"WQ 模式下不存在算子 '{op}'（pandas 惯用法，"
+                    f"从来不是 WQ BRAIN 算子，服务端会报 unknown operator）{hint_msg}",
+                    hint,
+                )
+            )
+            continue
+
+        # --- 本地专有算子：任何目录状态下都必然非法 ---
+        # 注意用的是 _LOCAL_ONLY_UNSUPPORTED 而非 _LOCAL_ONLY_OPERATORS：
+        # 后者含官方合法算子（ts_zscore / indneutralize / clip），
+        # 拿它当黑名单正是 25.7% 误杀的根因。
+        if op in _LOCAL_ONLY_UNSUPPORTED:
+            hint = _WQ_REPLACEMENTS.get(op, "")
+            errors.append(
+                Issue(
+                    "operator",
+                    op,
+                    f"WQ 模式下不支持算子 '{op}'（本地专有，非 WQ 算子）",
+                    hint,
+                )
+            )
+            continue
+
+        # --- 兼容别名：官方目录里没有这个名字，但历史上真实跑通过 ---
+        # 不得视为非法（goal 3.2），只提示官方写法后放行。
+        official = wq_operator_catalog.resolve_alias(op)
+        if official and op in _PARSER_CANONICAL_NAMES and not _has_official_spelling(
+            expression, op
+        ):
+            # 表达式里写的就是这个历史写法本身（ts_argmin / ts_shift），
+            # 提示"官方写法是 ts_arg_min / ts_delay"才有意义。
+            pass
+        elif official and op in _PARSER_CANONICAL_NAMES:
+            # 表达式里出现的是官方名（ts_arg_max / ts_delay），只是解析器把它
+            # 归一到内部键来校验。此时提示"不是官方算子名"自相矛盾。
+            official = ""
+        if official:
+            if official in allowed_ops:
+                warnings.append(Issue(
+                    "operator", op,
+                    f"'{op}' 不是官方算子名，官方写法是 '{official}'"
+                    f"（历史写法已兼容，不会被拦截）",
+                    f"建议改写为 {official}(...)",
+                ))
+            else:
+                # 别名指向的官方算子也不可用 → 同样不可判定，降级 warning
+                warnings.append(Issue(
+                    "operator", op,
+                    f"算子 '{op}' 无法校验：官方写法 '{official}' "
+                    f"也不在当前算子目录中",
+                    "目录恢复后会自动校验；现在可提交，但建议先小样本验证",
+                ))
+            # 别名一律按官方写法继续做 scope 校验
+            scope_issue = _check_operator_scope(official, expression_type)
+            if scope_issue:
+                errors.append(scope_issue)
+            continue
+
+        if op in allowed_ops:
+            # 作用域校验：REGULAR 表达式里不能用 COMBO 专用算子。
+            scope_issue = _check_operator_scope(op, expression_type)
+            if scope_issue:
+                errors.append(scope_issue)
+            continue
+
+        # --- 不在允许集合内 ---
+        if catalog_available or op in wq_operator_catalog.fallback_operators():
+            hint = _WQ_REPLACEMENTS.get(op, "")
+            if hint:
+                msg = f"WQ 模式下不存在算子 '{op}'，替代方案：{hint}"
+            else:
+                msg = f"WQ 模式下不存在算子 '{op}'（服务端会报 unknown operator）"
+            errors.append(Issue("operator", op, msg, hint))
+        else:
+            # 目录不可用且不在兜底核心集内：降级为 warning，绝不阻断。
+            warnings.append(
+                Issue(
+                    "operator",
+                    op,
+                    f"算子 '{op}' 无法校验：WQ 算子目录不可用"
+                    f"（{status.get('last_error') or '首次拉取失败或缓存缺失'}）",
+                    "目录恢复后会自动校验；现在可提交，但建议先小样本验证",
+                )
+            )
+
+    details = {
+        "operator_catalog_available": catalog_available,
+        "operator_catalog_count": status["count"],
+        "operator_catalog_stale": status["stale"],
+        "expression_type": expression_type,
+    }
+    return errors, warnings, details
+
+
+def _check_operator_scope(op: str, expression_type: str) -> Issue | None:
+    """校验算子的 scope 是否匹配表达式类型。
+
+    官方 ``GET /operators`` 的 ``scope`` 字段直接可用于此项：``vec_*`` /
+    ``vector_neut`` 属于 COMBO 作用域，写进 REGULAR 表达式服务端必然拒绝。
+    scope 未知（目录不可用且不在兜底集内）时**跳过**校验，绝不据此报错。
+    """
+    scope = wq_operator_catalog.scope_of(op)
+    if not scope:
+        return None  # 未知 scope：跳过
+    if expression_type in scope:
+        return None
+    return Issue(
+        "operator",
+        op,
+        f"算子 '{op}' 的作用域是 {'/'.join(scope)}，"
+        f"不能用在 {expression_type} 表达式里"
+        f"（本次提交 type=\"{expression_type}\"）",
+        _scope_hint(expression_type),
+    )
+
+
+def _scope_hint(expression_type: str) -> str:
+    if expression_type == "REGULAR":
+        return (
+            "COMBO 作用域算子只能用在 type=\"COMBO\" 的向量表达式里；"
+            "REGULAR 表达式请改用官方 REGULAR 算子（rank / ts_zscore / "
+            "group_neutralize 等）"
+        )
+    return "REGULAR 作用域算子请用在 type=\"REGULAR\" 的普通表达式里"
+
+
 def _validate_variables(expression: str) -> tuple[list[Issue], list[Issue], dict[str, Any]]:
     """闸门③：变量/字段分类校验。
 
@@ -352,6 +631,7 @@ def validate_wq_expression(
     expression: str,
     strict: bool = False,
     execute: bool = False,
+    expression_type: str = "REGULAR",
 ) -> ValidationResult:
     """执行 WQ 提交前的完整校验（闸门①~④）。
 
@@ -360,11 +640,15 @@ def validate_wq_expression(
         strict: True 时任何 warning 也升级为 error（默认 False 只阻断 error）。
         execute: True 时额外用 dummy DataFrame 实跑一次，捕获运行期错误。
             wq 模式下大多数算子只能远程执行，故默认关闭。
+        expression_type: WQ 仿真顶层类型（``REGULAR`` / ``COMBO``），用于算子
+            ``scope`` 校验。``wq_brain_submit`` / ``simulate`` 传的是 ``REGULAR``，
+            所以 ``vector_neut`` / ``vec_*`` 这类 COMBO 专用算子会被明确拦下。
 
-    这是**纯本地**校验：除字段目录的磁盘缓存外无任何 IO/网络，
+    这是**纯本地**校验：除字段/算子目录的磁盘缓存外无任何 IO/网络，
     目标耗时 <100ms（见 acceptance D）。
     """
     expression = (expression or "").strip()
+    expression_type = (expression_type or "REGULAR").strip().upper()
     errors: list[Issue] = []
     warnings: list[Issue] = []
     details: dict[str, Any] = {}
@@ -387,27 +671,23 @@ def validate_wq_expression(
             errors=[paren_issue],
         )
 
+    # 闸门①续：运算符后缺少操作数（rank(close +) 这类残缺表达式）
+    dangling_issue = _check_dangling_operator(expression)
+    if dangling_issue:
+        errors.append(dangling_issue)
+
     # 闸门④：维度类静态检查
     for issue in [*_check_length(expression), *_check_depth(expression),
                   *_check_adv_ranges(expression), *_check_units(expression)]:
         (errors if issue.kind == "dimension" else warnings).append(issue)
 
-    # 闸门②：算子。ExpressionParser 在 mode="wq" 下对白名单外算子硬报错，
-    # 这里先做一遍**集合**层面的预检，以便给出比解析器更友好的 hint。
-    allowed_ops = wq_operators()
-    ops, _ = _collect_names(expression)  # ops 已做别名归一
-    for op in sorted(ops):
-        if op in allowed_ops:
-            continue
-        hint = _WQ_REPLACEMENTS.get(op, "")
-        if hint:
-            msg = f"WQ 模式下不存在算子 '{op}'，替代方案：{hint}"
-        else:
-            msg = (
-                f"WQ 模式下不存在算子 '{op}'（服务端会报 "
-                f"unknown operator）"
-            )
-        errors.append(Issue("operator", op, msg, hint))
+    # 闸门②：算子。以官方目录为唯一权威，附带 scope 判定。
+    op_errors, op_warnings, op_details = _validate_operators(
+        expression, expression_type
+    )
+    errors.extend(op_errors)
+    warnings.extend(op_warnings)
+    details.update(op_details)
 
     # 闸门③：变量/字段
     var_errors, var_warnings, var_details = _validate_variables(expression)
@@ -437,7 +717,7 @@ def validate_wq_expression(
 
     status = _resolve_status(errors, warnings, strict)
     message = _build_message(status, errors, warnings)
-    details["checked_operators"] = sorted(ops)
+    details["checked_operators"] = sorted(_collect_names(expression)[0])
     return ValidationResult(status, message, "wq", errors, warnings, details)
 
 
@@ -500,10 +780,20 @@ def _build_message(status: str, errors: list[Issue], warnings: list[Issue]) -> s
     return " | ".join(parts)
 
 
-def validate_expression(expression: str, mode: str = "local", strict: bool = False) -> ValidationResult:
-    """统一入口：按 mode 分派到 wq / local 校验。"""
+def validate_expression(
+    expression: str,
+    mode: str = "local",
+    strict: bool = False,
+    expression_type: str = "REGULAR",
+) -> ValidationResult:
+    """统一入口：按 mode 分派到 wq / local 校验。
+
+    ``expression_type`` 只对 ``mode="wq"`` 生效（用于算子 scope 校验）。
+    """
     if mode == "wq":
-        return validate_wq_expression(expression, strict=strict)
+        return validate_wq_expression(
+            expression, strict=strict, expression_type=expression_type
+        )
     if mode == "local":
         return validate_local_expression(expression)
     return ValidationResult(
@@ -514,14 +804,24 @@ def validate_expression(expression: str, mode: str = "local", strict: bool = Fal
     )
 
 
-def precheck(expression: str, mode: str = "wq", strict: bool = True) -> ValidationResult:
+def precheck(
+    expression: str,
+    mode: str = "wq",
+    strict: bool = True,
+    expression_type: str = "REGULAR",
+) -> ValidationResult:
     """批量预检入口。
 
     与 :func:`validate_wq_expression` 的区别：strict 默认 **True**。
     subagent 批量生成表达式后过这道闸时，应取最严口径——否则"目录不可用"
     的 warning 会让一批未知字段表达式被原样提交，重蹈 1~7 分钟等待的覆辙。
+
+    ``expression_type`` 透传给算子 scope 校验，默认 REGULAR（与
+    ``wq_brain_submit`` 的提交类型一致）。
     """
-    return validate_expression(expression, mode=mode, strict=strict)
+    return validate_expression(
+        expression, mode=mode, strict=strict, expression_type=expression_type
+    )
 
 
 __all__ = [

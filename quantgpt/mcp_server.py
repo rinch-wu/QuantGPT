@@ -100,7 +100,12 @@ def list_universes() -> str:
 
 
 @mcp.tool()
-def validate_expression(expression: str, mode: str = "local", strict: bool = False) -> str:
+def validate_expression(
+    expression: str,
+    mode: str = "local",
+    strict: bool = False,
+    expression_type: str = "REGULAR",
+) -> str:
     """验证因子表达式，返回 JSON（含 status/message/errors/warnings）。
 
     ⚠️ 这是 **WQ 提交前的闸门**，不是"提交后等服务端报错"：
@@ -119,18 +124,28 @@ def validate_expression(expression: str, mode: str = "local", strict: bool = Fal
         expression: 因子表达式
         mode: "local"（本地 A 股回测，默认，行为不变）或 "wq"（WQ BRAIN 提交验证）
         strict: True 时任何 warning 也升级为 error（默认只阻断 error）
+        expression_type: WQ 仿真顶层类型（"REGULAR" / "COMBO"），仅 mode="wq" 生效。
+            用于算子 scope 校验：COMBO 专用算子（vector_neut / vec_*）写进
+            REGULAR 表达式会被明确拦下。wq_brain_submit 传的是 REGULAR。
 
     ⚠️ 向后兼容：message 字段仍保留上游原文案
     "OK: expression is valid for WQ BRAIN submission" / "OK: expression is valid"，
     依赖字符串匹配的现有 cron prompt、subagent 手册与测试不受影响。
     """
 
-    result = validate_expression_result(expression, mode=mode, strict=strict)
+    result = validate_expression_result(
+        expression, mode=mode, strict=strict, expression_type=expression_type
+    )
     return result.to_json()
 
 
 @mcp.tool()
-def precheck_expression(expression: str, mode: str = "wq", strict: bool = True) -> str:
+def precheck_expression(
+    expression: str,
+    mode: str = "wq",
+    strict: bool = True,
+    expression_type: str = "REGULAR",
+) -> str:
     """提交前批量预检（纯本地，**绝不调用 WQ API**），目标耗时 <100ms。
 
     与 `wq_brain_batch_submit` 的区别：完全离线，只读字段目录的磁盘缓存，
@@ -145,12 +160,16 @@ def precheck_expression(expression: str, mode: str = "wq", strict: bool = True) 
         expression: 单条因子表达式
         mode: "wq"（默认）或 "local"
         strict: warning 是否也阻断，默认 True
+        expression_type: WQ 仿真顶层类型（"REGULAR" / "COMBO"），默认 REGULAR，
+            与 wq_brain_submit 的提交类型一致
 
     返回 JSON：结构同 `validate_expression`，另附 `details`（字段目录状态、
     检出的算子列表）与 `submit_allowed`，便于批量决策。
     """
 
-    result = precheck_result(expression, mode=mode, strict=strict)
+    result = precheck_result(
+        expression, mode=mode, strict=strict, expression_type=expression_type
+    )
     payload = result.to_dict()
     payload["submit_allowed"] = not result.blocked
     return json.dumps(payload, ensure_ascii=False, indent=2)
