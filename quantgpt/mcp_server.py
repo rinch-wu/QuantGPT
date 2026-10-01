@@ -3,7 +3,8 @@
 Provides tools for Agent-driven backtest workflow:
 - list_operators: Show available factor expression operators
 - list_universes: Show available stock universes
-- validate_expression: Check expression syntax
+- validate_expression: Validate expression against WQ/local rules (submission gate)
+- precheck_expression: Offline pre-submission precheck (no WQ API calls)
 - run_backtest: Execute full backtest pipeline
 - score_factor: Compute composite factor quality score
 - diagnose_factor: Diagnose factor issues and suggest mutations
@@ -18,13 +19,10 @@ import sys
 import time
 import traceback
 
-import pandas as pd
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from .expression_parser import __doc__ as _expr_module_doc
-from .expression_parser import parse_expression
-from .fundamental_data import ALL_FUNDAMENTAL_NAMES
 from .market_data import BENCHMARK_CODES, UNIVERSES, MarketDataFetcher, fetch_benchmark_returns, get_universe
 from .mcp_task_helper import complete_mcp_task, start_mcp_task
 from .report import generate_report
@@ -37,6 +35,8 @@ from .wq_brain_service import (
     safe_float,
 )
 from .task_executor import _run_backtest_in_process, get_executor
+from .wq_validator import precheck as precheck_result
+from .wq_validator import validate_expression as validate_expression_result
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s", stream=sys.stderr)
 logger = logging.getLogger(__name__)
@@ -72,16 +72,9 @@ def _fetch_benchmark_for_market(benchmark: str, start_date: str, end_date: str):
     return fetch_benchmark_returns(benchmark, start_date, end_date)
 
 
-# Dummy DataFrame for expression validation (includes fundamental columns)
-_VALIDATION_DUMMY = pd.DataFrame({
-    "open": [1.0, 2.0, 3.0], "high": [1.1, 2.1, 3.1],
-    "low": [0.9, 1.9, 2.9], "close": [1.0, 2.0, 3.0],
-    "volume": [100, 200, 300], "amount": [100, 400, 900],
-    "pct_change": [0, 100, 50],
-    "trade_date": pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03"]),
-    **{name: [1.0, 1.1, 1.2] for name in ALL_FUNDAMENTAL_NAMES},
-})
-
+# 说明：原先这里的 _VALIDATION_DUMMY 已迁移到 wq_validator._validation_dummy()。
+# 原因：wq_validator 校验时需要执行表达式，若反向 import mcp_server 会形成循环依赖
+# （mcp_server → wq_validator → mcp_server），并把纯校验逻辑绑死在 MCP 运行时上。
 
 @mcp.tool()
 def list_operators() -> str:
@@ -107,33 +100,60 @@ def list_universes() -> str:
 
 
 @mcp.tool()
-def validate_expression(expression: str, mode: str = "local") -> str:
-    """验证因子表达式语法是否正确。返回 OK 或错误信息。
+def validate_expression(expression: str, mode: str = "local", strict: bool = False) -> str:
+    """验证因子表达式，返回 JSON（含 status/message/errors/warnings）。
+
+    ⚠️ 这是 **WQ 提交前的闸门**，不是"提交后等服务端报错"：
+    非法算子/字段在 `POST /simulations` 会返回 201，错误只在轮询阶段暴露，
+    代价恒为 1~7 分钟模拟。所以 wq 模式在此**本地**拦截算子、字段、量纲三类错误。
+
+    返回结构：
+        {"status": "ok"|"warning"|"error", "level": 同 status,
+         "message": "...", "mode": "...",
+         "errors":   [{"kind","name","message","hint"}],
+         "warnings": [...]}
+    - status=error   → 必然被 WQ 拒绝，**禁止提交**
+    - status=warning → 可能失败（如字段目录不可用），建议先小样本验证
 
     Args:
         expression: 因子表达式
-        mode: "local"（本地回测验证，默认）或 "wq"（WQ BRAIN 提交验证，放宽字段/算子限制）
+        mode: "local"（本地 A 股回测，默认，行为不变）或 "wq"（WQ BRAIN 提交验证）
+        strict: True 时任何 warning 也升级为 error（默认只阻断 error）
+
+    ⚠️ 向后兼容：message 字段仍保留上游原文案
+    "OK: expression is valid for WQ BRAIN submission" / "OK: expression is valid"，
+    依赖字符串匹配的现有 cron prompt、subagent 手册与测试不受影响。
     """
 
-    depth = 0
-    for i, ch in enumerate(expression):
-        if ch == '(':
-            depth += 1
-        elif ch == ')':
-            depth -= 1
-            if depth < 0:
-                return f"ERROR: 括号不平衡：位置 {i} 处多余的右括号 ')'"
-    if depth > 0:
-        return f"ERROR: 括号不平衡：缺少 {depth} 个右括号 ')'"
+    result = validate_expression_result(expression, mode=mode, strict=strict)
+    return result.to_json()
 
-    try:
-        func = parse_expression(expression, mode=mode)
-        if mode == "wq":
-            return "OK: expression is valid for WQ BRAIN submission"
-        func(_VALIDATION_DUMMY)
-        return "OK: expression is valid"
-    except Exception as e:
-        return f"ERROR: {e}"
+
+@mcp.tool()
+def precheck_expression(expression: str, mode: str = "wq", strict: bool = True) -> str:
+    """提交前批量预检（纯本地，**绝不调用 WQ API**），目标耗时 <100ms。
+
+    与 `wq_brain_batch_submit` 的区别：完全离线，只读字段目录的磁盘缓存，
+    用于 subagent 在批量生成表达式之后、提交之前统一过闸，把必然失败的表达式
+    在本地拦下来，省掉每个表达式 1~7 分钟的模拟等待。
+
+    与 `validate_expression` 的区别：strict 默认 **True**（最严口径）。
+    批量场景下"目录不可用"的 warning 若被放行，等于把整批未知字段表达式
+    原样提交，重蹈 1~7 分钟等待的覆辙。
+
+    Args:
+        expression: 单条因子表达式
+        mode: "wq"（默认）或 "local"
+        strict: warning 是否也阻断，默认 True
+
+    返回 JSON：结构同 `validate_expression`，另附 `details`（字段目录状态、
+    检出的算子列表）与 `submit_allowed`，便于批量决策。
+    """
+
+    result = precheck_result(expression, mode=mode, strict=strict)
+    payload = result.to_dict()
+    payload["submit_allowed"] = not result.blocked
+    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
 @mcp.tool()

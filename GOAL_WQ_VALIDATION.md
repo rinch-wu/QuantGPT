@@ -207,7 +207,7 @@ validate_expression("rank(close)", "wq")                   → ok
 
 ```
 rank(ts_delta(close, 5) / ts_std_dev(returns, 20))
-group_rank(ts_rank(turnover, 126), subindustry)
+group_rank(ts_rank(est_eps, 126), subindustry)
 trade_when(volume > adv20, returns, -returns)
 group_neutralize(rank(est_eps / close), subindustry)
 group_zscore(winsorize(rank(returns), std=4), industry)

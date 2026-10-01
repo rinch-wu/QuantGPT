@@ -35,13 +35,15 @@ Supported operations:
 - max(a, b)           : element-wise maximum
 - min(a, b)           : element-wise minimum
 - clip(expr, lo, hi)  : clip values to [lo, hi] range
-- where(cond, t, f)   : conditional selection (t if cond else f)
+- where(cond, t, f)   : conditional selection (t if cond else f) — **local mode only**;
+                        WQ BRAIN 没有 where 算子，wq 模式请用 trade_when
 - indneutralize(col, industry) : industry neutralization (placeholder)
 - ts_av_diff(col, N)  : deviation from rolling mean (col - ts_mean(col, N))
 - ts_zscore(col, N)   : rolling z-score ((col - ts_mean) / ts_std over N periods)
 - trade_when(cond, alpha, hold_val) : conditional signal — use alpha when cond is true, else hold last value (initial=hold_val)
 - group_rank(col, group) : cross-sectional rank within group (e.g., group_rank(close, industry))
 - group_zscore(col, group) : cross-sectional z-score within group
+- winsorize(x[, std])   : winsorize outliers (WQ BRAIN remote operator)
 Technical indicators:
 - ema(col, N)         : exponential moving average (span=N)
 - sma(col, N)         : simple moving average (alias for ts_mean)
@@ -128,9 +130,21 @@ _WQ_OPERATORS = {
     'ts_shift', 'ts_delta', 'ts_rank', 'ts_argmax', 'ts_argmin',
     'decay_linear', 'product', 'ts_av_diff',
     'ts_corr', 'ts_cov',
-    'where', 'trade_when',
+    'winsorize',
+    # 注意：这里**不能**有 'where'。'where' 是 pandas.Series.where() 的三元选择惯用法，
+    # 从来不是 WQ BRAIN 算子；WQ 官方对应算子是 trade_when（语义不同：条件不满足时
+    # 继承上一期持仓，而非逐元素切换）。上游把它误收进白名单，导致本地校验放行、
+    # 服务端报 unknown operator，subagent 白等 1~7 分钟模拟。
+    'trade_when',
     'indneutralize',
 }
+
+# WQ 模式下**不再有任何"未知算子透传"通道**（见 _build_function 里的硬报错分支）。
+# 为什么要改成硬报错：WQ BRAIN 的算子集合是官方固定且可枚举的（远小于 data field 数量），
+# 服务端不存在"我们不知道的新算子"这种合法场景。此前的 warning + 透传分支等于把
+# 拼写错误、pandas 惯用法误用全部放行，是 cron 失败率的主要成因。
+# 代价是：若 WQ 未来新增算子，本地会误拒。缓解方式见 _WQ_REPLACEMENTS 的提示文案
+# 与 wq_field_catalog 的同类降级机制——宁可让作者显式确认，也不要静默提交后等 1~7 分钟。
 
 _LOCAL_ONLY_OPERATORS = {
     'tanh', 'sigmoid', 'exp', 'ts_zscore', 'clip',
@@ -138,8 +152,25 @@ _LOCAL_ONLY_OPERATORS = {
     'boll_upper', 'boll_lower', 'boll_mid', 'indneutralize',
 }
 
-_WQ_COLUMNS = {'open', 'high', 'low', 'close', 'volume', 'market_cap'}
-_WQ_SPECIAL_VARS = {'vwap', 'returns', 'cap'}
+# WQ 价格/成交列。注意：**没有 market_cap** —— WQ 侧市值字段叫 cap，
+# 写 market_cap 会被服务端判 Invalid data field。本地 A 股引擎才叫 market_cap，
+# 这个映射错是历史漏网之鱼，务必不要再把 market_cap 加回这里。
+_WQ_COLUMNS = {'open', 'high', 'low', 'close', 'volume', 'vwap', 'returns'}
+
+# WQ 内置变量（服务端直接认识，不属于 data field，不在 data-fields 目录里）
+_WQ_SPECIAL_VARS = {
+    'vwap', 'returns', 'cap', 'adv20',
+}
+
+# 本地专有列名 → WQ 官方名称。任务 3 要求重点覆盖这类映射错。
+_WQ_NAME_ALIASES = {
+    'market_cap': 'cap',
+    'float_market_cap': 'cap',
+    'amount': 'vwap',
+    'pct_change': 'returns',
+    'turnover_rate': 'volume / adv20',
+    'shares': 'cap / close',
+}
 
 _WQ_FUNDAMENTAL_FIELDS = {
     'earnings', 'ebit', 'ebitda', 'sales', 'revenue', 'equity', 'debt',
@@ -190,8 +221,19 @@ _WQ_EXTENDED_FIELDS = (
 _WQ_NEWS_PREFIXES = ('nws12_', 'nws24_', 'nws_', 'snt_')
 _WQ_GROUP_PREFIXES = ('indclass.', 'ind.', 'sector.', 'subindustry.')
 
+# WQ 分组字段（classification namespace）。它们**不在** /data-fields 目录里，
+# 是服务端单独的一组内置标识符；用目录去查会把所有 group_rank(x, industry)
+# 误判为非法字段。验收标准 C 里的合规表达式大量依赖这一类。
+_WQ_GROUP_FIELDS = {
+    'market', 'sector', 'industry', 'subindustry', 'exchange',
+    'country', 'currency', 'densification', 'market_coverage',
+}
+
 _LOCAL_ONLY_COLUMNS = {
-    'amount', 'pct_change', 'float_market_cap', 'turnover_rate', 'shares',
+    # 注意 market_cap 也在列：本地 A 股引擎叫 market_cap，WQ 侧叫 cap。
+    # 不加进来它会落到"未知字段透传"分支，被静默放行（Invalid data field）。
+    'amount', 'pct_change', 'market_cap', 'float_market_cap',
+    'turnover_rate', 'shares',
 }
 
 _WQ_REMOTE_ONLY_OPS = {
@@ -209,6 +251,7 @@ _WQ_REMOTE_ONLY_OPS = {
     'ts_kurtosis': (2, 2, 'ts_kurtosis(x, d)'),
     'ts_backfill': (2, 2, 'ts_backfill(x, d)'),
     'normalize': (1, 1, 'normalize(x)'),
+    'winsorize': (1, 2, 'winsorize(x) or winsorize(x, std)'),
     'quantile': (1, 3, 'quantile(x) or quantile(x, driver, n)'),
     'pasteurize': (1, 1, 'pasteurize(x)'),
     'bucket': (2, 3, 'bucket(x, n) or bucket(x, range, n)'),
@@ -229,19 +272,70 @@ _WQ_REMOTE_ONLY_OPS = {
 
 _WQ_OPERATORS = _WQ_OPERATORS | set(_WQ_REMOTE_ONLY_OPS.keys())
 
+# 算子/变量别名 → WQ 官方替代方案。
+# 用途有二：(1) mode="wq" 报错时给出可直接抄的替代写法；(2) variable_category()
+# 识别出本地专有名字时给出迁移指引。这张表是**唯一**的知识来源，务必写全常见的
+# pandas / numpy 惯用法——它们是 subagent 最常误用的东西（上游最典型的就是 'where'）。
 _WQ_REPLACEMENTS = {
+    # --- pandas/numpy 惯用法 → WQ 官方算子 ---
+    'where': 'trade_when(cond, enter, exit)（条件不满足时继承上一期持仓，非逐元素切换）',
+    'if_else': 'trade_when(cond, enter, exit)',
+    'np.where': 'trade_when(cond, enter, exit)',
+    'select': 'trade_when(cond, enter, exit)',
+    'fillna': 'ts_backfill(x, d)',
+    'ffill': 'ts_backfill(x, d)',
+    'iloc': 'ts_shift(x, N)',
+    'rolling': 'ts_mean / ts_std / ts_sum(x, N)',
+    'pct_change': 'returns（WQ 已内置日收益）',
+    'isnull': 'trade_when(cond, enter, exit)',
+    'notnull': 'trade_when(cond, enter, exit)',
+    'any': 'trade_when(cond, enter, exit)',
+    'all': 'trade_when(cond, enter, exit)',
+    'between': 'trade_when(cond, enter, exit)',
+    'corr': 'ts_corr(x, y, d)',
+    'cov': 'ts_cov(x, y, d)',
+    'quantile': 'quantile(x, driver, n)（WQ 官方算子）',
+    'std': 'ts_std(x, d)',
+    'var': 'ts_std(x, d)',
+    'mean': 'ts_mean(x, d)',
+    'median': 'ts_median(x, d)',
+    'abs_diff': 'abs(x - y)',
+    'diff': 'ts_delta(x, d)',
+    'shift': 'ts_shift(x, d)',
+    'sort': 'rank(x)',
+    'nlargest': 'ts_argmax(x, d)',
+    'cumsum': 'ts_sum(x, d)',
+
+    # --- 本地专有算子 → WQ 官方算子 ---
     'tanh': 'sign_power(x, 0.5) 或 x / (1 + abs(x))',
     'sigmoid': 'rank(x) 或 1 / (1 + power(2.718, -x))',
     'exp': 'power(2.718, x)',
+    'log1p': 'log(1 + x)',
     'clip': 'max(lo, min(hi, x))',
     'ema': 'decay_linear(x, N)',
     'sma': 'ts_mean(x, N)',
     'wma': 'decay_linear(x, N)',
     'ts_zscore': '(x - ts_mean(x, N)) / ts_std(x, N)',
+    'rsi': 'ts_rank(x, N)',
+    'macd': 'ts_delta(ts_mean(x, N), N)',
+    'obv': 'ts_sum(sign(ts_delta(close, 1)) * volume, N)',
+    'atr': '(high - low) / close',
+    'boll_upper': 'ts_mean(x, N) + 2 * ts_std(x, N)',
+    'boll_lower': 'ts_mean(x, N) - 2 * ts_std(x, N)',
+    'boll_mid': 'ts_mean(x, N)',
+    'group_neutralize_ind': 'group_neutralize(x, group)',
+
+    # --- 本地专有字段/变量 → WQ 官方字段 ---
+    # 重点：本地 A 股引擎叫 market_cap，WQ 侧叫 cap —— 这类映射错是漏网之鱼。
+    'market_cap': 'cap（WQ 侧市值字段名为 cap，不是 market_cap）',
     'amount': 'vwap (= amount/volume)',
     'pct_change': 'returns',
     'turnover_rate': 'volume / adv20',
-    'float_market_cap': 'market_cap',
+    'float_market_cap': 'cap（WQ 无流通市值单独字段）',
+    'shares': 'cap / close（WQ 无股本字段）',
+    'trade_date': 'delay',
+    'stock_code': '（WQ 无此概念，按标的自动区分）',
+    'dividend_yield': 'dividends / cap',
 }
 
 _WQ_UNIT_PATTERNS = [
@@ -500,22 +594,20 @@ class ExpressionParser:
         func_name = self._OPERATOR_ALIASES.get(func_name, func_name)
 
         if self.mode == "wq" and func_name not in _WQ_OPERATORS:
+            # WQ 模式对白名单外算子**一律硬报错**，不再 warning 后透传。
+            # 原因：透传意味着 validate_expression 永远返回 OK，subagent 会把
+            # 必然被服务端拒绝的表达式提交上去，白等 1~7 分钟模拟才发现算子不存在。
+            # 注意 WQ 算子表是官方固定且完全可枚举的（见 _WQ_OPERATORS / _WQ_REMOTE_ONLY_OPS），
+            # 不像 data field 有数万条、服务端无法全知——所以算子可以硬拒，字段必须降级（见
+            # wq_field_catalog）。宁可误拒让人显式确认，也不要静默放行。
+            hint = _WQ_REPLACEMENTS.get(func_name, "")
+            hint_msg = f"，替代方案：{hint}" if hint else ""
             if func_name in _LOCAL_ONLY_OPERATORS:
-                hint = _WQ_REPLACEMENTS.get(func_name, "")
-                hint_msg = f"，替代方案：{hint}" if hint else ""
                 raise ValueError(f"WQ 模式下不支持算子 '{func_name}'{hint_msg}")
-            logger.warning(f"WQ 模式：未知算子 '{func_name}'，将作为远程算子透传给 WQ BRAIN")
-            parts = self._split_top_level(args_str)
-            for p in parts:
-                p_stripped = p.strip()
-                if p_stripped and not p_stripped.replace('.', '', 1).lstrip('-').isdigit():
-                    try:
-                        self._sub_parse(p_stripped)
-                    except ValueError:
-                        pass
-            def _wq_unknown_op_stub(df, _name=func_name):
-                raise RuntimeError(f"算子 '{_name}' 仅支持 WQ BRAIN 远程执行，不可本地计算")
-            return _wq_unknown_op_stub
+            raise ValueError(
+                f"WQ 模式下不存在算子 '{func_name}'（WQ BRAIN 会报 "
+                f"unknown operator）{hint_msg}"
+            )
 
         if func_name in _WQ_REMOTE_ONLY_OPS:
             if self.mode != "wq":
@@ -617,24 +709,36 @@ class ExpressionParser:
                 raise ValueError("trade_when requires 3 arguments: (condition, alpha, hold_value)")
             cond_fn = self._sub_parse(parts[0].strip())
             alpha_fn = self._sub_parse(parts[1].strip())
-            hold_val = float(parts[2].strip())
-            def _trade_when(df, _cond=cond_fn, _alpha=alpha_fn, _hold=hold_val):
+            # 第三个参数在 WQ 官方语义里是 hold value：**常数或任意表达式都可以**。
+            # 最常见的官方标准写法就是 `trade_when(cond, returns, -returns)`
+            # （条件不满足时翻转为 -returns）。上游这里只接受 float()，
+            # 会让这个标准写法直接抛 ValueError —— 属于过严导致的误杀，必须放宽。
+            hold_expr = parts[2].strip()
+            try:
+                hold_val: float | None = float(hold_expr)
+                hold_fn = None
+            except ValueError:
+                hold_val = None
+                hold_fn = self._sub_parse(hold_expr)
+
+            def _trade_when(df, _cond=cond_fn, _alpha=alpha_fn, _hold=hold_val, _hold_fn=hold_fn):
                 cond = _cond(df).astype(bool)
                 alpha = _alpha(df)
+                hold = _hold if _hold_fn is None else _hold_fn(df)
                 result = pd.Series(np.nan, index=df.index)
                 if 'stock_code' in df.columns:
                     for _, grp in df.groupby('stock_code'):
                         idx = grp.index
-                        c, a = cond.loc[idx], alpha.loc[idx]
+                        c, a, h = cond.loc[idx], alpha.loc[idx], hold.loc[idx]
                         vals = pd.Series(np.nan, index=idx)
-                        prev = _hold
+                        prev = h.iloc[0] if _hold_fn is not None else _hold
                         for i in idx:
                             if c.loc[i]:
                                 prev = a.loc[i]
                             vals.loc[i] = prev
                         result.loc[idx] = vals
                 else:
-                    prev = _hold
+                    prev = hold.iloc[0] if _hold_fn is not None else _hold
                     for i in df.index:
                         if cond.loc[i]:
                             prev = alpha.loc[i]
@@ -841,8 +945,16 @@ class ExpressionParser:
             return lambda df, _fn=var_fn: _fn(df)
 
         # Average daily volume: adv{N} (e.g., adv20, adv60) — case-insensitive
-        if expr_lower.startswith('adv') and expr_lower[3:].isdigit():
-            window = self._validate_window(int(expr_lower[3:]), 'adv')
+        if expr_lower.startswith('adv'):
+            digits = expr_lower[3:]
+            # adv{N} 只接受 1<=N<=MAX_WINDOW。adv 后缀非数字（adv_xxx / advfoo）
+            # 不再静默落到列引用分支给出含糊报错，这里显式说明。
+            if not digits.isdigit():
+                raise ValueError(
+                    f"变量 '{expr_lower}' 不是合法的 adv{{N}}，"
+                    f"N 必须是非负整数（1~{self.MAX_WINDOW}），如 adv20 / adv60"
+                )
+            window = self._validate_window(int(digits), 'adv')
             return lambda df, _w=window: (
                 df.groupby('stock_code')['volume'].transform(lambda x: x.rolling(_w, min_periods=1).mean())
                 if 'stock_code' in df.columns
@@ -1047,3 +1159,64 @@ def extract_components(expression: str) -> dict:
         pass
     fields = {w for w in fields if not w.replace('.', '').isdigit()}
     return {"operators": operators, "fields": fields}
+
+
+# ------------------------------------------------------------------
+# WQ 提交前校验所需的公开查询接口（任务 2/3/4 使用）
+# ------------------------------------------------------------------
+
+def wq_operators() -> set:
+    """WQ 模式下允许的全部算子名（含仅远程可执行的 operator-typed 算子）。
+
+    算子表是官方固定且完全可枚举的，所以可以**硬拒**白名单外的算子，
+    不像 data field 需要目录 + 降级（见 wq_field_catalog 模块头注释）。
+    """
+    return set(_WQ_OPERATORS) | set(_WQ_REMOTE_ONLY_OPS)
+
+
+def variable_category(name: str) -> str:
+    """判定 FASTEXPR 里一个变量名的来源类别。
+
+    返回 ``"builtin" | "price" | "group" | "datafield" | "unknown"``。
+
+    三类来源完全不同，必须分开校验：
+    - ``builtin``：WQ 内置变量（vwap/returns/cap/adv{N}），服务端直接认识，
+      **不在** /data-fields 目录里，用目录去查会全部误判为非法。
+    - ``price``：价格/成交量列（open/high/low/close/volume）。
+    - ``group``：分组字段（industry/subindustry/sector/... 及其 indclass. 前缀形式）。
+    - ``datafield``：真正需要查目录的一类。
+    - ``unknown``：以上都不是——目录可用时即为非法字段，目录不可用时降级为警告。
+    """
+    key = name.strip().lower()
+    if not key:
+        return "unknown"
+    # 本地专有别名先归一，否则 market_cap 会被误判成 data field
+    key = _WQ_NAME_ALIASES.get(key, key)
+
+    if key in _WQ_SPECIAL_VARS:
+        return "builtin"
+    if re.fullmatch(r"adv\d+", key):
+        return "builtin"
+    if key in _WQ_COLUMNS:
+        return "builtin" if key in _WQ_SPECIAL_VARS else "price"
+    # 分组字段：WQ 里 industry/subindustry/sector 是独立 namespace，
+    # 既不是价格列也不在 data-fields 目录中，漏掉会导致误杀所有 group_* 表达式。
+    if key in _WQ_GROUP_FIELDS or any(key.startswith(p) for p in _WQ_GROUP_PREFIXES):
+        return "group"
+    if any(key.startswith(p) for p in _WQ_NEWS_PREFIXES):
+        return "datafield"
+    return "datafield"
+
+
+def wq_field_known(name: str) -> tuple:
+    """判断 WQ data field 是否合法，返回 ``(exists, catalog_available)``。
+
+    目录不可用时 ``exists=False`` 但 ``catalog_available=False``——调用方据此把
+    "字段非法"降级成"无法校验"，避免误杀合规表达式。
+    """
+    from . import wq_field_catalog
+
+    available = wq_field_catalog.catalog_status()["available"]
+    if not available:
+        return False, False
+    return wq_field_catalog.field_exists(name), True
